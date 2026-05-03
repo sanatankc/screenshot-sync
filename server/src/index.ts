@@ -1,9 +1,15 @@
 import { Hono } from "hono";
-import type { ScreenshotRecord, WorkspaceEvent } from "@screenshot-sync/contracts";
+import type {
+  PairingCompleteRequest,
+  PairingSessionCreateRequest,
+  ScreenshotRecord,
+  WorkspaceEvent,
+} from "@screenshot-sync/contracts";
 import type { ScreenshotRow } from "@screenshot-sync/db-schema";
 import type { Env } from "@server/lib/env";
 import { WorkspaceHub } from "@server/durable/workspace-hub";
 import { toScreenshotRecord } from "@server/lib/mappers";
+import { completePairing, createPairingSession } from "@server/lib/pairing";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -55,13 +61,40 @@ app.get("/health", (c) => {
   });
 });
 
+app.post("/api/pairing/session", async (c) => {
+  const payload = (await c.req.json().catch(() => ({}))) as PairingSessionCreateRequest;
+  const serverUrl = new URL(c.req.url).origin;
+  const result = await createPairingSession(c.env, payload, serverUrl);
+  return c.json(result, 201);
+});
+
+app.post("/api/pairing/complete", async (c) => {
+  const payload = (await c.req.json()) as PairingCompleteRequest;
+
+  try {
+    const result = await completePairing(c.env, payload);
+    return c.json(result, 200);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "PAIRING_COMPLETE_FAILED";
+    const status = message === "PAIRING_SESSION_INVALID" ? 400 : 500;
+
+    return c.json(
+      {
+        ok: false,
+        error: message,
+      },
+      status,
+    );
+  }
+});
+
 app.all("*", (c) => {
   return c.json(
     {
       ok: false,
-      message: "Server scaffold is ready. API routes will be added in later tasks.",
+      message: "Requested route is not implemented yet.",
     },
-    501,
+    404,
   );
 });
 
