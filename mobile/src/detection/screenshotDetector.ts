@@ -21,10 +21,20 @@ export type ScreenshotDetectorStatus = {
   platform: string;
 };
 
+export type ReliabilityModeStatus = {
+  enabled: boolean;
+  serviceRunning: boolean;
+  lastScanAt: number;
+  platform: string;
+};
+
 type NativeScreenshotDetectorModule = {
   startWatching(): Promise<ScreenshotDetectorStatus>;
   stopWatching(): Promise<ScreenshotDetectorStatus>;
   getStatus(): Promise<ScreenshotDetectorStatus>;
+  startReliabilityMode(): Promise<ReliabilityModeStatus>;
+  stopReliabilityMode(): Promise<ReliabilityModeStatus>;
+  getReliabilityStatus(): Promise<ReliabilityModeStatus>;
 };
 
 const detectorModule = NativeModules.ScreenshotDetector as NativeScreenshotDetectorModule | undefined;
@@ -72,6 +82,19 @@ export async function getScreenshotDetectorStatus(): Promise<ScreenshotDetectorS
   return detectorModule.getStatus();
 }
 
+export async function getReliabilityModeStatus(): Promise<ReliabilityModeStatus> {
+  if (!detectorModule) {
+    return {
+      enabled: false,
+      serviceRunning: false,
+      lastScanAt: 0,
+      platform: Platform.OS,
+    };
+  }
+
+  return detectorModule.getReliabilityStatus();
+}
+
 export async function startScreenshotDetection() {
   if (!detectorModule) {
     throw new Error("Screenshot detector is unavailable on this platform");
@@ -84,6 +107,20 @@ export async function stopScreenshotDetection() {
     throw new Error("Screenshot detector is unavailable on this platform");
   }
   return detectorModule.stopWatching();
+}
+
+export async function startReliabilityMode() {
+  if (!detectorModule) {
+    throw new Error("Screenshot detector is unavailable on this platform");
+  }
+  return detectorModule.startReliabilityMode();
+}
+
+export async function stopReliabilityMode() {
+  if (!detectorModule) {
+    throw new Error("Screenshot detector is unavailable on this platform");
+  }
+  return detectorModule.stopReliabilityMode();
 }
 
 export function subscribeToScreenshotDetections(listener: (candidate: ScreenshotCandidate) => void) {

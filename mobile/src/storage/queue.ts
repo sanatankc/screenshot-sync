@@ -27,7 +27,7 @@ export type QueueSummary = {
 export async function enqueueScreenshotCandidate(candidate: ScreenshotCandidate) {
   database.runSync(
     `
-      INSERT INTO screenshot_queue (
+      INSERT OR IGNORE INTO screenshot_queue (
         id,
         media_store_id,
         uri,
@@ -39,8 +39,7 @@ export async function enqueueScreenshotCandidate(candidate: ScreenshotCandidate)
         last_error,
         uploaded_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, NULL, NULL)
-      ON CONFLICT(id) DO NOTHING;
+      VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, NULL, NULL);
     `,
     [
       candidate.id,

@@ -4,10 +4,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ensureScreenshotPermission,
+  getReliabilityModeStatus,
   getScreenshotDetectorStatus,
   isScreenshotDetectorAvailable,
+  startReliabilityMode,
   startScreenshotDetection,
+  stopReliabilityMode,
   stopScreenshotDetection,
+  type ReliabilityModeStatus,
   subscribeToDetectorState,
   subscribeToScreenshotDetections,
   type ScreenshotCandidate,
@@ -35,6 +39,13 @@ const DEFAULT_DETECTOR_STATUS: ScreenshotDetectorStatus = {
   platform: "unknown",
 };
 
+const DEFAULT_RELIABILITY_STATUS: ReliabilityModeStatus = {
+  enabled: false,
+  serviceRunning: false,
+  lastScanAt: 0,
+  platform: "unknown",
+};
+
 const DEFAULT_QUEUE_SUMMARY: QueueSummary = {
   total: 0,
   queued: 0,
@@ -52,6 +63,7 @@ export default function App() {
   const [detectedScreenshots, setDetectedScreenshots] = useState<ScreenshotCandidate[]>([]);
   const [queueItems, setQueueItems] = useState<ScreenshotQueueItem[]>([]);
   const [queueSummary, setQueueSummary] = useState<QueueSummary>(DEFAULT_QUEUE_SUMMARY);
+  const [reliabilityStatus, setReliabilityStatus] = useState<ReliabilityModeStatus>(DEFAULT_RELIABILITY_STATUS);
   const detectorAvailable = isScreenshotDetectorAvailable();
 
   async function refreshQueue() {
@@ -65,7 +77,12 @@ export default function App() {
       setError(null);
       await ensureAppStorage();
       setDiagnostics(await loadBootstrapDiagnostics());
-      setDetectorStatus(await getScreenshotDetectorStatus());
+      const [nextDetectorStatus, nextReliabilityStatus] = await Promise.all([
+        getScreenshotDetectorStatus(),
+        getReliabilityModeStatus(),
+      ]);
+      setDetectorStatus(nextDetectorStatus);
+      setReliabilityStatus(nextReliabilityStatus);
       await refreshQueue();
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : String(nextError);
@@ -86,6 +103,21 @@ export default function App() {
 
   async function handleStopDetector() {
     setDetectorStatus(await stopScreenshotDetection());
+  }
+
+  async function handleStartReliabilityMode() {
+    const granted = await ensureScreenshotPermission();
+    setPermissionState(granted ? "granted" : "denied");
+    if (!granted) {
+      return;
+    }
+
+    setReliabilityStatus(await startReliabilityMode());
+    await refreshQueue();
+  }
+
+  async function handleStopReliabilityMode() {
+    setReliabilityStatus(await stopReliabilityMode());
   }
 
   useEffect(() => {
@@ -167,6 +199,32 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Max reliability mode</Text>
+          <View style={styles.card}>
+            <Row label="Enabled" value={reliabilityStatus.enabled ? "yes" : "no"} />
+            <Row label="Service running" value={reliabilityStatus.serviceRunning ? "yes" : "no"} />
+            <Row
+              label="Last background scan"
+              value={reliabilityStatus.lastScanAt > 0 ? new Date(reliabilityStatus.lastScanAt).toLocaleTimeString() : "never"}
+            />
+            <Text style={styles.helperText}>
+              Keeps a persistent Android notification alive and runs screenshot detection from a native foreground service.
+            </Text>
+            <View style={styles.actionRow}>
+              <Pressable style={[styles.button, styles.actionButton]} onPress={() => void handleStartReliabilityMode()}>
+                <Text style={styles.buttonText}>Start always-on mode</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, styles.actionButton, styles.secondaryButton]}
+                onPress={() => void handleStopReliabilityMode()}
+              >
+                <Text style={styles.secondaryButtonText}>Stop</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Queue summary</Text>
           <View style={styles.card}>
             <Row label="Total items" value={String(queueSummary.total)} />
@@ -182,7 +240,7 @@ export default function App() {
           <View style={styles.card}>
             <Milestone title="Native detector" body="Add a Kotlin module that emits new screenshot candidates from MediaStore." />
             <Milestone title="Persistent queue" body="Track queued, uploading, uploaded, and failed screenshots in SQLite." />
-            <Milestone title="Background worker" body="Move uploads out of the UI path and reconcile missed screenshots later." />
+            <Milestone title="Max reliability mode" body="Keep a foreground service alive and reconcile missed screenshots in the background." />
           </View>
         </View>
 
@@ -359,6 +417,11 @@ const styles = StyleSheet.create({
     color: "#f4f7fb",
     fontSize: 14,
     fontWeight: "700",
+  },
+  helperText: {
+    color: "#98a3b3",
+    fontSize: 13,
+    lineHeight: 19,
   },
   milestone: {
     gap: 6,
