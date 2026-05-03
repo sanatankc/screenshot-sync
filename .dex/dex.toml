@@ -1,0 +1,6 @@
+# dex configuration file
+
+[storage]
+engine = "file"
+
+[storage.file]
