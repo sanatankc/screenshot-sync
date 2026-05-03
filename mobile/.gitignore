@@ -13,6 +13,7 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
@@ -38,4 +39,12 @@ yarn-error.*
 
 # generated native folders
 /ios
-/android
+
+# tracked native Android project, but not local build outputs
+/android/.gradle
+/android/build
+/android/app/build
+/android/.kotlin
+/android/.idea
+/android/.cxx
+/android/local.properties
