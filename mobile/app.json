@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Screenshot Sync",
+    "slug": "screenshot-sync-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#090b10"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sanatan.screenshotsync",
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS"
+      ],
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#090b10"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-sqlite"
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
