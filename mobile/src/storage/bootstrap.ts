@@ -1,6 +1,6 @@
 import * as SQLite from "expo-sqlite";
 
-const database = SQLite.openDatabaseSync("screenshot-sync.db");
+export const database = SQLite.openDatabaseSync("screenshot-sync.db");
 
 export type BootstrapDiagnostics = {
   queueTableReady: boolean;
@@ -22,6 +22,17 @@ export async function ensureAppStorage() {
       last_error TEXT,
       uploaded_at TEXT
     );
+  `);
+
+  database.execSync(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_screenshot_queue_uri
+    ON screenshot_queue(uri);
+  `);
+
+  database.execSync(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_screenshot_queue_media_store_id
+    ON screenshot_queue(media_store_id)
+    WHERE media_store_id IS NOT NULL;
   `);
 }
 

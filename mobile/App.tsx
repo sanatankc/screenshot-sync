@@ -14,6 +14,13 @@ import {
   type ScreenshotDetectorStatus,
 } from "./src/detection/screenshotDetector";
 import { ensureAppStorage, loadBootstrapDiagnostics, type BootstrapDiagnostics } from "./src/storage/bootstrap";
+import {
+  enqueueScreenshotCandidate,
+  getQueueSummary,
+  listQueueItems,
+  type QueueSummary,
+  type ScreenshotQueueItem,
+} from "./src/storage/queue";
 
 const DEFAULT_DIAGNOSTICS: BootstrapDiagnostics = {
   queueTableReady: false,
@@ -21,16 +28,19 @@ const DEFAULT_DIAGNOSTICS: BootstrapDiagnostics = {
   lastCheckedAt: null,
 };
 
-const sampleQueue = [
-  { id: "demo-1", name: "Screenshot_2026-05-03-18-01-44.png", state: "queued" },
-  { id: "demo-2", name: "Screenshot_2026-05-03-18-04-10.png", state: "uploaded" },
-];
-
 const DEFAULT_DETECTOR_STATUS: ScreenshotDetectorStatus = {
   isWatching: false,
   listenerCount: 0,
   seenItemCount: 0,
   platform: "unknown",
+};
+
+const DEFAULT_QUEUE_SUMMARY: QueueSummary = {
+  total: 0,
+  queued: 0,
+  uploading: 0,
+  uploaded: 0,
+  failed: 0,
 };
 
 export default function App() {
@@ -40,7 +50,15 @@ export default function App() {
   const [detectorStatus, setDetectorStatus] = useState<ScreenshotDetectorStatus>(DEFAULT_DETECTOR_STATUS);
   const [permissionState, setPermissionState] = useState<"unknown" | "granted" | "denied">("unknown");
   const [detectedScreenshots, setDetectedScreenshots] = useState<ScreenshotCandidate[]>([]);
+  const [queueItems, setQueueItems] = useState<ScreenshotQueueItem[]>([]);
+  const [queueSummary, setQueueSummary] = useState<QueueSummary>(DEFAULT_QUEUE_SUMMARY);
   const detectorAvailable = isScreenshotDetectorAvailable();
+
+  async function refreshQueue() {
+    const [items, summary] = await Promise.all([listQueueItems(12), getQueueSummary()]);
+    setQueueItems(items);
+    setQueueSummary(summary);
+  }
 
   async function refreshDiagnostics() {
     try {
@@ -48,6 +66,7 @@ export default function App() {
       await ensureAppStorage();
       setDiagnostics(await loadBootstrapDiagnostics());
       setDetectorStatus(await getScreenshotDetectorStatus());
+      await refreshQueue();
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : String(nextError);
       setError(message || "Failed to initialize local storage");
@@ -76,6 +95,7 @@ export default function App() {
   useEffect(() => {
     const screenshotSubscription = subscribeToScreenshotDetections((candidate) => {
       setDetectedScreenshots((current) => [candidate, ...current].slice(0, 12));
+      void enqueueScreenshotCandidate(candidate).then(() => refreshQueue());
     });
     const stateSubscription = subscribeToDetectorState((status) => {
       setDetectorStatus(status);
@@ -147,6 +167,17 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Queue summary</Text>
+          <View style={styles.card}>
+            <Row label="Total items" value={String(queueSummary.total)} />
+            <Row label="Queued" value={String(queueSummary.queued)} />
+            <Row label="Uploading" value={String(queueSummary.uploading)} />
+            <Row label="Uploaded" value={String(queueSummary.uploaded)} />
+            <Row label="Failed" value={String(queueSummary.failed)} />
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Next milestones</Text>
           <View style={styles.card}>
             <Milestone title="Native detector" body="Add a Kotlin module that emits new screenshot candidates from MediaStore." />
@@ -175,17 +206,21 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sample queue preview</Text>
+          <Text style={styles.sectionTitle}>Queued screenshots</Text>
           <View style={styles.card}>
-            {sampleQueue.map((item) => (
-              <View key={item.id} style={styles.queueItem}>
-                <View style={styles.queueText}>
-                  <Text style={styles.queueName}>{item.name}</Text>
-                  <Text style={styles.queueId}>{item.id}</Text>
+            {queueItems.length === 0 ? (
+              <Text style={styles.emptyText}>No queued screenshots yet. Start the detector and take one.</Text>
+            ) : (
+              queueItems.map((item) => (
+                <View key={item.id} style={styles.queueItem}>
+                  <View style={styles.queueText}>
+                    <Text style={styles.queueName}>{item.fileName}</Text>
+                    <Text style={styles.queueId}>{item.relativePath || item.uri}</Text>
+                  </View>
+                  <Text style={styles.queueState}>{item.status}</Text>
                 </View>
-                <Text style={styles.queueState}>{item.state}</Text>
-              </View>
-            ))}
+              ))
+            )}
           </View>
         </View>
       </ScrollView>
