@@ -6,7 +6,7 @@ export const workspaces = sqliteTable("workspaces", {
   activeDeviceId: text("active_device_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-  lastActivityAt: integer("last_activity_at", { mode: "timestamp_ms" }).notNull()
+  lastActivityAt: integer("last_activity_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 export const devices = sqliteTable("devices", {
@@ -18,7 +18,7 @@ export const devices = sqliteTable("devices", {
   appVersion: text("app_version").notNull(),
   lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  revokedAt: integer("revoked_at", { mode: "timestamp_ms" })
+  revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });
 
 export const pairingSessions = sqliteTable("pairing_sessions", {
@@ -30,7 +30,7 @@ export const pairingSessions = sqliteTable("pairing_sessions", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   pairedAt: integer("paired_at", { mode: "timestamp_ms" }),
   viewerSessionId: text("viewer_session_id"),
-  deviceId: text("device_id")
+  deviceId: text("device_id"),
 });
 
 export const viewerSessions = sqliteTable("viewer_sessions", {
@@ -41,7 +41,7 @@ export const viewerSessions = sqliteTable("viewer_sessions", {
   lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
-  revokedAt: integer("revoked_at", { mode: "timestamp_ms" })
+  revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });
 
 export const screenshots = sqliteTable("screenshots", {
@@ -70,5 +70,16 @@ export const screenshots = sqliteTable("screenshots", {
   originalMimeType: text("original_mime_type"),
   originalSizeBytes: integer("original_size_bytes"),
   originalUploadedAt: integer("original_uploaded_at", { mode: "timestamp_ms" }),
-  deletedAt: integer("deleted_at", { mode: "timestamp_ms" })
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
+
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type NewWorkspaceRow = typeof workspaces.$inferInsert;
+export type DeviceRow = typeof devices.$inferSelect;
+export type NewDeviceRow = typeof devices.$inferInsert;
+export type PairingSessionRow = typeof pairingSessions.$inferSelect;
+export type NewPairingSessionRow = typeof pairingSessions.$inferInsert;
+export type ViewerSessionRow = typeof viewerSessions.$inferSelect;
+export type NewViewerSessionRow = typeof viewerSessions.$inferInsert;
+export type ScreenshotRow = typeof screenshots.$inferSelect;
+export type NewScreenshotRow = typeof screenshots.$inferInsert;

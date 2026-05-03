@@ -1,0 +1,14 @@
+{
+  "name": "screenshot-sync",
+  "private": true,
+  "packageManager": "pnpm@10.18.1",
+  "workspaces": [
+    "mobile",
+    "server",
+    "web",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "pnpm -r typecheck"
+  }
+}

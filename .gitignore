@@ -1,0 +1,13 @@
+.DS_Store
+node_modules
+.pnpm-store
+mobile/android/.gradle
+mobile/android/build
+mobile/android/app/build
+mobile/android/.kotlin
+mobile/android/.idea
+mobile/android/.cxx
+mobile/android/local.properties
+mobile/android/app/debug.keystore
+web/dist
+server/.wrangler
