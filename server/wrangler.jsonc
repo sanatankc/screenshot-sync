@@ -1,0 +1,51 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "screenshot-sync-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-04",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "screenshot-sync-db",
+      "database_id": "replace-with-d1-id"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SCREENSHOT_ASSETS",
+      "bucket_name": "screenshot-sync-assets"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACE_HUB",
+        "class_name": "WorkspaceHub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "WorkspaceHub"
+      ]
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "RETENTION_CLEANUP_QUEUE",
+        "queue": "screenshot-sync-retention"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "screenshot-sync-retention"
+      }
+    ]
+  }
+}
