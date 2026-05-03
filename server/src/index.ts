@@ -15,6 +15,7 @@ import { WorkspaceHub } from "@server/durable/workspace-hub";
 import { deviceAuth, type AppVariables, viewerAuth } from "@server/lib/middleware";
 import { toScreenshotRecord } from "@server/lib/mappers";
 import { completePairing, createPairingSession } from "@server/lib/pairing";
+import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromUploadPath, storeUpload } from "@server/lib/uploads";
 import {
   completeOriginalUpload,
@@ -117,18 +118,33 @@ app.post("/api/screenshots/init", deviceAuth, async (c) => {
     request: payload,
     serverUrl,
   });
-  return c.json(result, 201);
+  await publishScreenshotCreated(c.env, device.workspaceId, {
+    type: "screenshot.created",
+    screenshot: result.screenshot,
+  });
+  return c.json(
+    {
+      screenshotId: result.screenshotId,
+      status: result.status,
+      uploadTargets: result.uploadTargets,
+    },
+    201,
+  );
 });
 
 app.post("/api/screenshots/:id/preview", deviceAuth, async (c) => {
   try {
     const device = c.get("device");
     const payload = (await c.req.json()) as ScreenshotPreviewCompleteRequest;
-    await completePreviewUpload(c.env, {
+    const screenshot = await completePreviewUpload(c.env, {
       workspaceId: device.workspaceId,
       deviceId: device.id,
       screenshotId: c.req.param("id"),
       request: payload,
+    });
+    await publishScreenshotUpdated(c.env, device.workspaceId, {
+      type: "screenshot.updated",
+      screenshot,
     });
     return c.body(null, 204);
   } catch (error) {
@@ -142,11 +158,15 @@ app.post("/api/screenshots/:id/original", deviceAuth, async (c) => {
   try {
     const device = c.get("device");
     const payload = (await c.req.json()) as ScreenshotOriginalCompleteRequest;
-    await completeOriginalUpload(c.env, {
+    const screenshot = await completeOriginalUpload(c.env, {
       workspaceId: device.workspaceId,
       deviceId: device.id,
       screenshotId: c.req.param("id"),
       request: payload,
+    });
+    await publishScreenshotUpdated(c.env, device.workspaceId, {
+      type: "screenshot.updated",
+      screenshot,
     });
     return c.body(null, 204);
   } catch (error) {
@@ -160,11 +180,15 @@ app.post("/api/screenshots/:id/fail", deviceAuth, async (c) => {
   try {
     const device = c.get("device");
     const payload = (await c.req.json()) as ScreenshotFailRequest;
-    await failScreenshot(c.env, {
+    const screenshot = await failScreenshot(c.env, {
       workspaceId: device.workspaceId,
       deviceId: device.id,
       screenshotId: c.req.param("id"),
       request: payload,
+    });
+    await publishScreenshotUpdated(c.env, device.workspaceId, {
+      type: "screenshot.updated",
+      screenshot,
     });
     return c.body(null, 204);
   } catch (error) {
@@ -183,6 +207,19 @@ app.put("/internal/uploads/*", async (c) => {
 
   await storeUpload(c.env, storageKey, c.req.raw);
   return c.body(null, 204);
+});
+
+app.get("/api/workspaces/:workspaceId/ws", viewerAuth, async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const viewerSession = c.get("viewerSession");
+
+  if (viewerSession.workspaceId !== workspaceId) {
+    return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
+  }
+
+  const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(workspaceId));
+  const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
+  return stub.fetch(websocketRequest);
 });
 
 app.all("*", (c) => {

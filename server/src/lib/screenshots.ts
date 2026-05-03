@@ -6,6 +6,7 @@ import type {
   ScreenshotListResponse,
   ScreenshotOriginalCompleteRequest,
   ScreenshotPreviewCompleteRequest,
+  ScreenshotRecord,
 } from "@screenshot-sync/contracts";
 import { screenshots, workspaces } from "@screenshot-sync/db-schema";
 import type { Env } from "@server/lib/env";
@@ -59,7 +60,7 @@ export async function initScreenshot(
     request: ScreenshotInitRequest;
     serverUrl: string;
   },
-): Promise<ScreenshotInitResponse> {
+): Promise<ScreenshotInitResponse & { screenshot: ScreenshotRecord }> {
   const db = getDb(env);
   const now = new Date();
 
@@ -105,11 +106,20 @@ export async function initScreenshot(
     });
   }
 
+  const screenshot = await db.query.screenshots.findFirst({
+    where: eq(screenshots.id, screenshotId),
+  });
+
+  if (!screenshot) {
+    throw new Error("SCREENSHOT_NOT_FOUND");
+  }
+
   await touchWorkspace(env, input.workspaceId, now);
 
   return {
     screenshotId,
     status: existing?.status ?? "pending",
+    screenshot: toScreenshotRecord(screenshot),
     uploadTargets: {
       preview: buildUploadTarget(input.serverUrl, previewStorageKey),
       original: buildUploadTarget(input.serverUrl, originalStorageKey),
@@ -125,7 +135,7 @@ export async function completePreviewUpload(
     screenshotId: string;
     request: ScreenshotPreviewCompleteRequest;
   },
-): Promise<void> {
+): Promise<ScreenshotRecord> {
   const db = getDb(env);
   const now = new Date();
 
@@ -157,7 +167,16 @@ export async function completePreviewUpload(
     })
     .where(eq(screenshots.id, input.screenshotId));
 
+  const updated = await db.query.screenshots.findFirst({
+    where: eq(screenshots.id, input.screenshotId),
+  });
+
+  if (!updated) {
+    throw new Error("SCREENSHOT_NOT_FOUND");
+  }
+
   await touchWorkspace(env, input.workspaceId, now);
+  return toScreenshotRecord(updated);
 }
 
 export async function completeOriginalUpload(
@@ -168,7 +187,7 @@ export async function completeOriginalUpload(
     screenshotId: string;
     request: ScreenshotOriginalCompleteRequest;
   },
-): Promise<void> {
+): Promise<ScreenshotRecord> {
   const db = getDb(env);
   const now = new Date();
 
@@ -197,7 +216,16 @@ export async function completeOriginalUpload(
     })
     .where(eq(screenshots.id, input.screenshotId));
 
+  const updated = await db.query.screenshots.findFirst({
+    where: eq(screenshots.id, input.screenshotId),
+  });
+
+  if (!updated) {
+    throw new Error("SCREENSHOT_NOT_FOUND");
+  }
+
   await touchWorkspace(env, input.workspaceId, now);
+  return toScreenshotRecord(updated);
 }
 
 export async function failScreenshot(
@@ -208,7 +236,7 @@ export async function failScreenshot(
     screenshotId: string;
     request: ScreenshotFailRequest;
   },
-): Promise<void> {
+): Promise<ScreenshotRecord> {
   const db = getDb(env);
   const now = new Date();
 
@@ -233,5 +261,14 @@ export async function failScreenshot(
     })
     .where(eq(screenshots.id, input.screenshotId));
 
+  const updated = await db.query.screenshots.findFirst({
+    where: eq(screenshots.id, input.screenshotId),
+  });
+
+  if (!updated) {
+    throw new Error("SCREENSHOT_NOT_FOUND");
+  }
+
   await touchWorkspace(env, input.workspaceId, now);
+  return toScreenshotRecord(updated);
 }

@@ -33,9 +33,3 @@ export type WorkspaceEvent =
   | ScreenshotCreatedEvent
   | ScreenshotUpdatedEvent
   | ScreenshotDeletedEvent;
-
-export type WorkspaceSubscribeMessage = {
-  type: "workspace.subscribe";
-  workspaceId: string;
-  webSessionToken: string;
-};
