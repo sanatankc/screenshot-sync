@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type {
   PairingCompleteRequest,
   PairingSessionCreateRequest,
@@ -13,8 +14,10 @@ import type { ScreenshotRow } from "@screenshot-sync/db-schema";
 import type { Env } from "@server/lib/env";
 import { WorkspaceHub } from "@server/durable/workspace-hub";
 import { deviceAuth, type AppVariables, viewerAuth } from "@server/lib/middleware";
+import { readBearerToken, requireViewerSession } from "@server/lib/auth";
 import { toScreenshotRecord } from "@server/lib/mappers";
 import { completePairing, createPairingSession } from "@server/lib/pairing";
+import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromUploadPath, storeUpload } from "@server/lib/uploads";
 import {
@@ -26,6 +29,26 @@ import {
 } from "@server/lib/screenshots";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (!origin) return origin;
+
+      const allowedOrigins = new Set([
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+      ]);
+
+      return allowedOrigins.has(origin) ? origin : null;
+    },
+    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    exposeHeaders: ["Content-Length", "Content-Type"],
+    maxAge: 86400,
+  }),
+);
 
 const exampleScreenshotRow = {
   id: "shot_example",
@@ -118,10 +141,14 @@ app.post("/api/screenshots/init", deviceAuth, async (c) => {
     request: payload,
     serverUrl,
   });
-  await publishScreenshotCreated(c.env, device.workspaceId, {
-    type: "screenshot.created",
-    screenshot: result.screenshot,
-  });
+  if (result.isNew) {
+    await publishScreenshotCreated(c.env, device.workspaceId, {
+      type: "screenshot.created",
+      screenshot: result.screenshot,
+    });
+    await applyWorkspaceRetention(c.env, device.workspaceId);
+  }
+
   return c.json(
     {
       screenshotId: result.screenshotId,
@@ -209,17 +236,24 @@ app.put("/internal/uploads/*", async (c) => {
   return c.body(null, 204);
 });
 
-app.get("/api/workspaces/:workspaceId/ws", viewerAuth, async (c) => {
+app.get("/api/workspaces/:workspaceId/ws", async (c) => {
   const workspaceId = c.req.param("workspaceId");
-  const viewerSession = c.get("viewerSession");
+  const token = c.req.query("token") ?? readBearerToken(c.req.header("authorization") ?? null);
 
-  if (viewerSession.workspaceId !== workspaceId) {
-    return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
+  try {
+    const viewerSession = await requireViewerSession(c.env, token ? `Bearer ${token}` : null);
+
+    if (viewerSession.workspaceId !== workspaceId) {
+      return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
+    }
+
+    const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(workspaceId));
+    const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
+    return stub.fetch(websocketRequest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";
+    return c.json({ ok: false, error: message }, 401);
   }
-
-  const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(workspaceId));
-  const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
-  return stub.fetch(websocketRequest);
 });
 
 app.all("*", (c) => {

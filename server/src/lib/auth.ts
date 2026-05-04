@@ -4,7 +4,7 @@ import type { Env } from "@server/lib/env";
 import { getDb } from "@server/lib/db";
 import { sha256 } from "@server/lib/crypto";
 
-function readBearerToken(headerValue: string | null): string | null {
+export function readBearerToken(headerValue: string | null): string | null {
   if (!headerValue) {
     return null;
   }

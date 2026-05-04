@@ -60,7 +60,7 @@ export async function initScreenshot(
     request: ScreenshotInitRequest;
     serverUrl: string;
   },
-): Promise<ScreenshotInitResponse & { screenshot: ScreenshotRecord }> {
+): Promise<ScreenshotInitResponse & { screenshot: ScreenshotRecord; isNew: boolean }> {
   const db = getDb(env);
   const now = new Date();
 
@@ -120,6 +120,7 @@ export async function initScreenshot(
     screenshotId,
     status: existing?.status ?? "pending",
     screenshot: toScreenshotRecord(screenshot),
+    isNew: !existing,
     uploadTargets: {
       preview: buildUploadTarget(input.serverUrl, previewStorageKey),
       original: buildUploadTarget(input.serverUrl, originalStorageKey),

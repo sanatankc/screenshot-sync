@@ -99,4 +99,14 @@ beforeEach(async () => {
   for (const table of ["screenshots", "pairing_sessions", "viewer_sessions", "devices", "workspaces"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
+
+  let cursor: string | undefined;
+
+  do {
+    const listing = await env.SCREENSHOT_ASSETS.list({ cursor });
+    if (listing.objects.length > 0) {
+      await Promise.all(listing.objects.map((object) => env.SCREENSHOT_ASSETS.delete(object.key)));
+    }
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor);
 });

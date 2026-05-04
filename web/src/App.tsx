@@ -1,7 +1,20 @@
+import { AppFrame } from "@/components/app/app-frame";
+import { PairingStage } from "@/components/pairing/pairing-stage";
+import { usePairingFlow } from "@/hooks/use-pairing-flow";
+
 export default function App() {
+  const pairing = usePairingFlow();
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <p className="text-sm font-medium tracking-tight">hello world</p>
-    </main>
+    <AppFrame>
+      <PairingStage
+        phase={pairing.phase}
+        connectionState={pairing.connectionState}
+        session={pairing.session}
+        pairedDeviceName={pairing.pairedDeviceName}
+        error={pairing.error}
+        onRefresh={pairing.refresh}
+      />
+    </AppFrame>
   );
 }

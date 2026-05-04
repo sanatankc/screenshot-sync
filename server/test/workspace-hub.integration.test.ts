@@ -31,9 +31,8 @@ describe("workspace hub", () => {
     });
     const pairingSession = await pairingSessionResponse.json<PairingSessionCreateResponse>();
 
-    const wsResponse = await SELF.fetch(`http://example.com/api/workspaces/${pairingSession.workspaceId}/ws`, {
+    const wsResponse = await SELF.fetch(`http://example.com/api/workspaces/${pairingSession.workspaceId}/ws?token=${pairingSession.webSessionToken}`, {
       headers: {
-        authorization: `Bearer ${pairingSession.webSessionToken}`,
         Upgrade: "websocket",
       },
     });
