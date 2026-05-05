@@ -34,6 +34,17 @@ export async function ensureAppStorage() {
     ON screenshot_queue(media_store_id)
     WHERE media_store_id IS NOT NULL;
   `);
+
+  database.execSync(`
+    CREATE TABLE IF NOT EXISTS paired_device_session (
+      id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+      workspace_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      device_token TEXT NOT NULL,
+      server_url TEXT NOT NULL,
+      connected_at TEXT NOT NULL
+    );
+  `);
 }
 
 export async function loadBootstrapDiagnostics(): Promise<BootstrapDiagnostics> {

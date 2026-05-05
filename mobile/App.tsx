@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -13,9 +13,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PairingQrPayload } from '@screenshot-sync/contracts';
 import { completePairingSession, getConfiguredServerUrl, parsePairingQrPayload } from './src/pairing/api';
 import { logPairingError, toPairingDebugString } from './src/pairing/logging';
+import {
+  clearPairedDeviceSession,
+  loadPairedDeviceSession,
+  savePairedDeviceSession,
+  type PairedDeviceSession,
+} from './src/pairing/sessionStore';
+import { ensureAppStorage } from './src/storage/bootstrap';
 import { zenTheme } from './src/theme/zen';
 
-type PairingPhase = 'request-permission' | 'ready' | 'pairing' | 'paired' | 'error';
+type PairingPhase = 'hydrating' | 'request-permission' | 'ready' | 'pairing' | 'paired' | 'error';
 
 type PairingState = {
   phase: PairingPhase;
@@ -29,8 +36,8 @@ const APP_VERSION = '1.0.0';
 const DEVICE_NAME = Platform.OS === 'android' ? 'Screenshot Sync Android' : 'Screenshot Sync';
 
 const initialState: PairingState = {
-  phase: 'request-permission',
-  message: 'Allow camera access to scan your pairing code.',
+  phase: 'hydrating',
+  message: 'Restoring this device…',
   payload: null,
   workspaceId: null,
   deviceId: null,
@@ -41,10 +48,59 @@ export default function App() {
   const [pairingState, setPairingState] = useState<PairingState>(initialState);
   const [scanLocked, setScanLocked] = useState(false);
   const [lastErrorDebug, setLastErrorDebug] = useState<string | null>(null);
+  const [pairedSession, setPairedSession] = useState<PairedDeviceSession | null>(null);
+  const [isScannerMode, setIsScannerMode] = useState(false);
 
   const permissionGranted = permission?.granted ?? false;
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        await ensureAppStorage();
+        const restored = await loadPairedDeviceSession();
+
+        if (restored) {
+          setPairedSession(restored);
+          setPairingState({
+            phase: 'paired',
+            message: 'This phone is connected. Screenshot watching can stay in the background.',
+            payload: null,
+            workspaceId: restored.workspaceId,
+            deviceId: restored.deviceId,
+          });
+          return;
+        }
+
+        setPairingState({
+          phase: permissionGranted ? 'ready' : 'request-permission',
+          message: permissionGranted ? 'Center the QR code inside the frame.' : 'Allow camera access to scan your pairing code.',
+          payload: null,
+          workspaceId: null,
+          deviceId: null,
+        });
+      } catch (error) {
+        logPairingError('hydrate-session', error);
+        setLastErrorDebug(toPairingDebugString(error));
+        setPairingState({
+          phase: 'error',
+          message: 'Could not restore device state.',
+          payload: null,
+          workspaceId: null,
+          deviceId: null,
+        });
+      }
+    })();
+  }, [permissionGranted]);
+
   const phase = useMemo<PairingPhase>(() => {
+    if (pairedSession && !isScannerMode) {
+      return 'paired';
+    }
+
+    if (pairingState.phase === 'hydrating') {
+      return 'hydrating';
+    }
+
     if (!permission) {
       return 'request-permission';
     }
@@ -54,10 +110,14 @@ export default function App() {
     }
 
     return pairingState.phase === 'request-permission' ? 'ready' : pairingState.phase;
-  }, [pairingState.phase, permission, permissionGranted]);
+  }, [isScannerMode, pairedSession, pairingState.phase, permission, permissionGranted]);
 
   const message = useMemo(() => {
-    if (!permissionGranted) {
+    if (phase === 'hydrating') {
+      return 'Restoring this device…';
+    }
+
+    if (!permissionGranted && phase !== 'paired') {
       return 'Allow camera access to scan your pairing code.';
     }
 
@@ -90,17 +150,24 @@ export default function App() {
     }));
   }, [requestPermission]);
 
-  const resetScanner = useCallback(() => {
+  const enterScannerMode = useCallback(() => {
     setScanLocked(false);
     setLastErrorDebug(null);
+    setIsScannerMode(true);
     setPairingState({
       phase: permissionGranted ? 'ready' : 'request-permission',
-      message: permissionGranted ? 'Center the QR code inside the frame.' : initialState.message,
+      message: permissionGranted ? 'Center the QR code inside the frame.' : 'Allow camera access to scan your pairing code.',
       payload: null,
       workspaceId: null,
       deviceId: null,
     });
   }, [permissionGranted]);
+
+  const handleDisconnect = useCallback(() => {
+    void clearPairedDeviceSession();
+    setPairedSession(null);
+    enterScannerMode();
+  }, [enterScannerMode]);
 
   const handleBarcodeScanned = useCallback(
     async ({ data }: BarcodeScanningResult) => {
@@ -121,7 +188,18 @@ export default function App() {
         });
 
         const response = await completePairingSession(payload, DEVICE_NAME, APP_VERSION);
+        const session: PairedDeviceSession = {
+          workspaceId: response.workspaceId,
+          deviceId: response.deviceId,
+          deviceToken: response.deviceToken,
+          serverUrl: getConfiguredServerUrl(),
+          connectedAt: new Date().toISOString(),
+        };
 
+        await savePairedDeviceSession(session);
+        setPairedSession(session);
+        setIsScannerMode(false);
+        setLastErrorDebug(null);
         setPairingState({
           phase: 'paired',
           message: 'This phone is connected. Screenshot watching can stay in the background.',
@@ -144,10 +222,15 @@ export default function App() {
           workspaceId: null,
           deviceId: null,
         });
+      } finally {
+        setScanLocked(false);
       }
     },
     [scanLocked],
   );
+
+  const showConnectedState = Boolean(pairedSession && !isScannerMode);
+  const connectedSession = showConnectedState ? pairedSession : null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -155,51 +238,78 @@ export default function App() {
       <View style={styles.screen}>
         <View style={styles.card}>
           <View style={styles.headerRow}>
-            <Text style={styles.eyebrow}>Pairing</Text>
+            <Text style={styles.eyebrow}>{showConnectedState ? 'Device' : 'Pairing'}</Text>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{phase === 'paired' ? 'LIVE' : phase === 'pairing' ? 'SYNCING' : phase === 'error' ? 'ERROR' : 'READY'}</Text>
+              <Text style={styles.badgeText}>
+                {phase === 'paired' ? 'LIVE' : phase === 'pairing' ? 'SYNCING' : phase === 'error' ? 'ERROR' : phase === 'hydrating' ? 'LOADING' : 'READY'}
+              </Text>
             </View>
           </View>
 
-          <View style={styles.cameraShell}>
-            {permissionGranted && phase !== 'paired' ? (
-              <CameraView
-                style={styles.camera}
-                facing="back"
-                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                onBarcodeScanned={phase === 'pairing' ? undefined : handleBarcodeScanned}
-              >
-                <View style={styles.cameraShadeTop} />
-                <View style={styles.cameraMiddleRow}>
-                  <View style={styles.cameraShadeSide} />
-                  <View style={styles.scanFrame}>
-                    <View style={[styles.corner, styles.cornerTopLeft]} />
-                    <View style={[styles.corner, styles.cornerTopRight]} />
-                    <View style={[styles.corner, styles.cornerBottomLeft]} />
-                    <View style={[styles.corner, styles.cornerBottomRight]} />
-                  </View>
-                  <View style={styles.cameraShadeSide} />
-                </View>
-                <View style={styles.cameraShadeBottom} />
-              </CameraView>
-            ) : (
-              <View style={styles.placeholderPane}>
-                {phase === 'pairing' ? <ActivityIndicator color={zenTheme.accent} size="large" /> : null}
-                <Text style={styles.placeholderTitle}>{phase === 'paired' ? 'Connected' : 'Scanner'}</Text>
-                <Text style={styles.placeholderBody}>{message}</Text>
+          {showConnectedState ? (
+            <View style={styles.connectedPane}>
+              <Text style={styles.connectedTitle}>This phone is connected.</Text>
+              <Text style={styles.connectedBody}>Screenshot watching and upload can happen automatically in the background.</Text>
+
+              <View style={styles.infoCard}>
+                <InfoRow label="Workspace" value={connectedSession!.workspaceId.slice(0, 12)} />
+                <InfoRow label="Device" value={connectedSession!.deviceId.slice(0, 12)} />
+                <InfoRow label="Server" value={connectedSession!.serverUrl} muted />
+                <InfoRow label="Connected" value={new Date(connectedSession!.connectedAt).toLocaleString()} muted />
               </View>
-            )}
-          </View>
 
-          <View style={styles.footerRow}>
-            <View style={styles.metaBlock}>
-              <Text style={styles.metaLabel}>Workspace</Text>
-              <Text style={styles.metaValue}>{pairingState.workspaceId ? pairingState.workspaceId.slice(0, 8) : '--------'}</Text>
+              <View style={styles.buttonRow}>
+                <Pressable style={styles.secondaryActionButton} onPress={enterScannerMode}>
+                  <Text style={styles.secondaryActionButtonText}>Scan new QR</Text>
+                </Pressable>
+                <Pressable style={styles.actionButton} onPress={handleDisconnect}>
+                  <Text style={styles.actionButtonText}>Disconnect</Text>
+                </Pressable>
+              </View>
             </View>
-            <Pressable style={styles.actionButton} onPress={permissionGranted ? resetScanner : handleRequestPermission}>
-              <Text style={styles.actionButtonText}>{permissionGranted ? 'Scan again' : 'Allow camera'}</Text>
-            </Pressable>
-          </View>
+          ) : (
+            <>
+              <View style={styles.cameraShell}>
+                {permissionGranted && phase !== 'paired' && phase !== 'hydrating' ? (
+                  <CameraView
+                    style={styles.camera}
+                    facing="back"
+                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                    onBarcodeScanned={phase === 'pairing' ? undefined : handleBarcodeScanned}
+                  >
+                    <View style={styles.cameraShadeTop} />
+                    <View style={styles.cameraMiddleRow}>
+                      <View style={styles.cameraShadeSide} />
+                      <View style={styles.scanFrame}>
+                        <View style={[styles.corner, styles.cornerTopLeft]} />
+                        <View style={[styles.corner, styles.cornerTopRight]} />
+                        <View style={[styles.corner, styles.cornerBottomLeft]} />
+                        <View style={[styles.corner, styles.cornerBottomRight]} />
+                      </View>
+                      <View style={styles.cameraShadeSide} />
+                    </View>
+                    <View style={styles.cameraShadeBottom} />
+                  </CameraView>
+                ) : (
+                  <View style={styles.placeholderPane}>
+                    {phase === 'pairing' || phase === 'hydrating' ? <ActivityIndicator color={zenTheme.accent} size="large" /> : null}
+                    <Text style={styles.placeholderTitle}>{phase === 'error' ? 'Try again' : 'Scanner'}</Text>
+                    <Text style={styles.placeholderBody}>{message}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.footerRow}> 
+                <View style={styles.metaBlock}>
+                  <Text style={styles.metaLabel}>Workspace</Text>
+                  <Text style={styles.metaValue}>{pairingState.workspaceId ? pairingState.workspaceId.slice(0, 8) : '--------'}</Text>
+                </View>
+                <Pressable style={styles.actionButton} onPress={permissionGranted ? enterScannerMode : handleRequestPermission}>
+                  <Text style={styles.actionButtonText}>{permissionGranted ? 'Scan again' : 'Allow camera'}</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
 
           {lastErrorDebug ? (
             <View style={styles.debugRow}>
@@ -208,18 +318,29 @@ export default function App() {
               <Text style={styles.debugHint}>server={(() => { try { return getConfiguredServerUrl(); } catch { return 'missing'; } })()}</Text>
             </View>
           ) : null}
-
-          {pairingState.deviceId ? (
-            <View style={styles.deviceRow}>
-              <Text style={styles.deviceLabel}>Connected device</Text>
-              <Text style={styles.deviceValue}>{pairingState.deviceId.slice(0, 12)}</Text>
-            </View>
-          ) : null}
         </View>
       </View>
     </SafeAreaView>
   );
 }
+
+type InfoRowProps = {
+  label: string;
+  value: string;
+  muted?: boolean;
+};
+
+function InfoRow({ label, value, muted = false }: InfoRowProps) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, muted ? styles.infoValueMuted : null]}>{value}</Text>
+    </View>
+  );
+}
+
+const monoFamily = Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined });
+const serifFamily = Platform.select({ ios: 'Georgia', android: 'serif', default: undefined });
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -275,6 +396,65 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
   },
+  connectedPane: {
+    gap: 18,
+  },
+  connectedTitle: {
+    color: zenTheme.foreground,
+    fontSize: 34,
+    lineHeight: 38,
+    fontFamily: serifFamily,
+  },
+  connectedBody: {
+    color: zenTheme.muted,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  infoCard: {
+    gap: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: zenTheme.borderSoft,
+    backgroundColor: zenTheme.cardStrong,
+    padding: 18,
+  },
+  infoRow: {
+    gap: 4,
+  },
+  infoLabel: {
+    color: zenTheme.muted,
+    fontSize: 11,
+    letterSpacing: 2.6,
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    color: zenTheme.foreground,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: monoFamily,
+  },
+  infoValueMuted: {
+    color: zenTheme.muted,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  secondaryActionButton: {
+    flex: 1,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: zenTheme.border,
+    backgroundColor: zenTheme.backgroundSoft,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  secondaryActionButtonText: {
+    color: zenTheme.foreground,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   cameraShell: {
     borderRadius: 24,
     overflow: 'hidden',
@@ -283,64 +463,17 @@ const styles = StyleSheet.create({
     backgroundColor: zenTheme.cardStrong,
     aspectRatio: 1,
   },
-  camera: {
-    flex: 1,
-  },
-  cameraShadeTop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  cameraMiddleRow: {
-    flexDirection: 'row',
-    height: '52%',
-  },
-  cameraShadeSide: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  cameraShadeBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  scanFrame: {
-    flex: 4.2,
-    borderRadius: 26,
-    position: 'relative',
-  },
-  corner: {
-    position: 'absolute',
-    width: 34,
-    height: 34,
-    borderColor: zenTheme.accent,
-  },
-  cornerTopLeft: {
-    top: 0,
-    left: 0,
-    borderLeftWidth: 4,
-    borderTopWidth: 4,
-    borderTopLeftRadius: 18,
-  },
-  cornerTopRight: {
-    top: 0,
-    right: 0,
-    borderRightWidth: 4,
-    borderTopWidth: 4,
-    borderTopRightRadius: 18,
-  },
-  cornerBottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderLeftWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomLeftRadius: 18,
-  },
-  cornerBottomRight: {
-    bottom: 0,
-    right: 0,
-    borderRightWidth: 4,
-    borderBottomWidth: 4,
-    borderBottomRightRadius: 18,
-  },
+  camera: { flex: 1 },
+  cameraShadeTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  cameraMiddleRow: { flexDirection: 'row', height: '52%' },
+  cameraShadeSide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  cameraShadeBottom: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  scanFrame: { flex: 4.2, borderRadius: 26, position: 'relative' },
+  corner: { position: 'absolute', width: 34, height: 34, borderColor: zenTheme.accent },
+  cornerTopLeft: { top: 0, left: 0, borderLeftWidth: 4, borderTopWidth: 4, borderTopLeftRadius: 18 },
+  cornerTopRight: { top: 0, right: 0, borderRightWidth: 4, borderTopWidth: 4, borderTopRightRadius: 18 },
+  cornerBottomLeft: { bottom: 0, left: 0, borderLeftWidth: 4, borderBottomWidth: 4, borderBottomLeftRadius: 18 },
+  cornerBottomRight: { bottom: 0, right: 0, borderRightWidth: 4, borderBottomWidth: 4, borderBottomRightRadius: 18 },
   placeholderPane: {
     flex: 1,
     alignItems: 'center',
@@ -352,8 +485,7 @@ const styles = StyleSheet.create({
     color: zenTheme.foreground,
     fontSize: 28,
     lineHeight: 32,
-    fontWeight: '500',
-    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: undefined }),
+    fontFamily: serifFamily,
   },
   placeholderBody: {
     color: zenTheme.muted,
@@ -380,7 +512,7 @@ const styles = StyleSheet.create({
   metaValue: {
     color: zenTheme.foreground,
     fontSize: 16,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    fontFamily: monoFamily,
   },
   actionButton: {
     borderRadius: 999,
@@ -409,29 +541,12 @@ const styles = StyleSheet.create({
     color: zenTheme.danger,
     fontSize: 12,
     lineHeight: 18,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    fontFamily: monoFamily,
   },
   debugHint: {
     color: zenTheme.mutedSoft,
     fontSize: 11,
     lineHeight: 16,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
-  },
-  deviceRow: {
-    borderTopWidth: 1,
-    borderTopColor: zenTheme.borderSoft,
-    paddingTop: 16,
-    gap: 6,
-  },
-  deviceLabel: {
-    color: zenTheme.muted,
-    fontSize: 12,
-    letterSpacing: 2.5,
-    textTransform: 'uppercase',
-  },
-  deviceValue: {
-    color: zenTheme.success,
-    fontSize: 15,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    fontFamily: monoFamily,
   },
 });
