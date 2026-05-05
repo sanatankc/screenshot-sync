@@ -19,6 +19,7 @@ import { publishPairingUpdated } from "@server/lib/workspace-hub";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
 
+
 export async function createPairingSession(
   env: Env,
   request: PairingSessionCreateRequest,

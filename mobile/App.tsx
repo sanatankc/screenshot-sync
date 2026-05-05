@@ -1,469 +1,437 @@
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { StatusBar } from 'expo-status-bar';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  ensureScreenshotPermission,
-  getReliabilityModeStatus,
-  getScreenshotDetectorStatus,
-  isScreenshotDetectorAvailable,
-  startReliabilityMode,
-  startScreenshotDetection,
-  stopReliabilityMode,
-  stopScreenshotDetection,
-  type ReliabilityModeStatus,
-  subscribeToDetectorState,
-  subscribeToScreenshotDetections,
-  type ScreenshotCandidate,
-  type ScreenshotDetectorStatus,
-} from "./src/detection/screenshotDetector";
-import { ensureAppStorage, loadBootstrapDiagnostics, type BootstrapDiagnostics } from "./src/storage/bootstrap";
-import {
-  enqueueScreenshotCandidate,
-  getQueueSummary,
-  listQueueItems,
-  type QueueSummary,
-  type ScreenshotQueueItem,
-} from "./src/storage/queue";
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import type { PairingQrPayload } from '@screenshot-sync/contracts';
+import { completePairingSession, getConfiguredServerUrl, parsePairingQrPayload } from './src/pairing/api';
+import { logPairingError, toPairingDebugString } from './src/pairing/logging';
+import { zenTheme } from './src/theme/zen';
 
-const DEFAULT_DIAGNOSTICS: BootstrapDiagnostics = {
-  queueTableReady: false,
-  databasePath: "unavailable",
-  lastCheckedAt: null,
+type PairingPhase = 'request-permission' | 'ready' | 'pairing' | 'paired' | 'error';
+
+type PairingState = {
+  phase: PairingPhase;
+  message: string;
+  payload: PairingQrPayload | null;
+  workspaceId: string | null;
+  deviceId: string | null;
 };
 
-const DEFAULT_DETECTOR_STATUS: ScreenshotDetectorStatus = {
-  isWatching: false,
-  listenerCount: 0,
-  seenItemCount: 0,
-  platform: "unknown",
-};
+const APP_VERSION = '1.0.0';
+const DEVICE_NAME = Platform.OS === 'android' ? 'Screenshot Sync Android' : 'Screenshot Sync';
 
-const DEFAULT_RELIABILITY_STATUS: ReliabilityModeStatus = {
-  enabled: false,
-  serviceRunning: false,
-  lastScanAt: 0,
-  platform: "unknown",
-};
-
-const DEFAULT_QUEUE_SUMMARY: QueueSummary = {
-  total: 0,
-  queued: 0,
-  uploading: 0,
-  uploaded: 0,
-  failed: 0,
+const initialState: PairingState = {
+  phase: 'request-permission',
+  message: 'Allow camera access to scan your pairing code.',
+  payload: null,
+  workspaceId: null,
+  deviceId: null,
 };
 
 export default function App() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [diagnostics, setDiagnostics] = useState<BootstrapDiagnostics>(DEFAULT_DIAGNOSTICS);
-  const [detectorStatus, setDetectorStatus] = useState<ScreenshotDetectorStatus>(DEFAULT_DETECTOR_STATUS);
-  const [permissionState, setPermissionState] = useState<"unknown" | "granted" | "denied">("unknown");
-  const [detectedScreenshots, setDetectedScreenshots] = useState<ScreenshotCandidate[]>([]);
-  const [queueItems, setQueueItems] = useState<ScreenshotQueueItem[]>([]);
-  const [queueSummary, setQueueSummary] = useState<QueueSummary>(DEFAULT_QUEUE_SUMMARY);
-  const [reliabilityStatus, setReliabilityStatus] = useState<ReliabilityModeStatus>(DEFAULT_RELIABILITY_STATUS);
-  const detectorAvailable = isScreenshotDetectorAvailable();
+  const [permission, requestPermission] = useCameraPermissions();
+  const [pairingState, setPairingState] = useState<PairingState>(initialState);
+  const [scanLocked, setScanLocked] = useState(false);
+  const [lastErrorDebug, setLastErrorDebug] = useState<string | null>(null);
 
-  async function refreshQueue() {
-    const [items, summary] = await Promise.all([listQueueItems(12), getQueueSummary()]);
-    setQueueItems(items);
-    setQueueSummary(summary);
-  }
+  const permissionGranted = permission?.granted ?? false;
 
-  async function refreshDiagnostics() {
-    try {
-      setError(null);
-      await ensureAppStorage();
-      setDiagnostics(await loadBootstrapDiagnostics());
-      const [nextDetectorStatus, nextReliabilityStatus] = await Promise.all([
-        getScreenshotDetectorStatus(),
-        getReliabilityModeStatus(),
-      ]);
-      setDetectorStatus(nextDetectorStatus);
-      setReliabilityStatus(nextReliabilityStatus);
-      await refreshQueue();
-    } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : String(nextError);
-      setError(message || "Failed to initialize local storage");
-    } finally {
-      setLoading(false);
+  const phase = useMemo<PairingPhase>(() => {
+    if (!permission) {
+      return 'request-permission';
     }
-  }
 
-  async function handleStartDetector() {
-    const granted = await ensureScreenshotPermission();
-    setPermissionState(granted ? "granted" : "denied");
-    if (!granted) {
-      return;
+    if (!permissionGranted) {
+      return 'request-permission';
     }
-    setDetectorStatus(await startScreenshotDetection());
-  }
 
-  async function handleStopDetector() {
-    setDetectorStatus(await stopScreenshotDetection());
-  }
+    return pairingState.phase === 'request-permission' ? 'ready' : pairingState.phase;
+  }, [pairingState.phase, permission, permissionGranted]);
 
-  async function handleStartReliabilityMode() {
-    const granted = await ensureScreenshotPermission();
-    setPermissionState(granted ? "granted" : "denied");
-    if (!granted) {
+  const message = useMemo(() => {
+    if (!permissionGranted) {
+      return 'Allow camera access to scan your pairing code.';
+    }
+
+    if (phase === 'ready') {
+      return 'Center the QR code inside the frame.';
+    }
+
+    return pairingState.message;
+  }, [pairingState.message, permissionGranted, phase]);
+
+  const handleRequestPermission = useCallback(async () => {
+    const result = await requestPermission();
+
+    if (!result.granted) {
+      const nextError = new Error('Camera access is required to scan a pairing code.');
+      logPairingError('camera-permission', nextError);
+      setLastErrorDebug('CAMERA_PERMISSION_DENIED');
+      setPairingState({
+        ...initialState,
+        phase: 'error',
+        message: 'Camera access is required to scan a pairing code.',
+      });
       return;
     }
 
-    setReliabilityStatus(await startReliabilityMode());
-    await refreshQueue();
-  }
+    setPairingState((current) => ({
+      ...current,
+      phase: 'ready',
+      message: 'Center the QR code inside the frame.',
+    }));
+  }, [requestPermission]);
 
-  async function handleStopReliabilityMode() {
-    setReliabilityStatus(await stopReliabilityMode());
-  }
-
-  useEffect(() => {
-    void refreshDiagnostics();
-  }, []);
-
-  useEffect(() => {
-    const screenshotSubscription = subscribeToScreenshotDetections((candidate) => {
-      setDetectedScreenshots((current) => [candidate, ...current].slice(0, 12));
-      void enqueueScreenshotCandidate(candidate).then(() => refreshQueue());
+  const resetScanner = useCallback(() => {
+    setScanLocked(false);
+    setLastErrorDebug(null);
+    setPairingState({
+      phase: permissionGranted ? 'ready' : 'request-permission',
+      message: permissionGranted ? 'Center the QR code inside the frame.' : initialState.message,
+      payload: null,
+      workspaceId: null,
+      deviceId: null,
     });
-    const stateSubscription = subscribeToDetectorState((status) => {
-      setDetectorStatus(status);
-    });
+  }, [permissionGranted]);
 
-    return () => {
-      screenshotSubscription.remove();
-      stateSubscription.remove();
-    };
-  }, []);
+  const handleBarcodeScanned = useCallback(
+    async ({ data }: BarcodeScanningResult) => {
+      if (scanLocked) {
+        return;
+      }
+
+      setScanLocked(true);
+
+      try {
+        const payload = parsePairingQrPayload(data);
+        setPairingState({
+          phase: 'pairing',
+          message: 'Connecting this phone…',
+          payload,
+          workspaceId: payload.workspaceId,
+          deviceId: null,
+        });
+
+        const response = await completePairingSession(payload, DEVICE_NAME, APP_VERSION);
+
+        setPairingState({
+          phase: 'paired',
+          message: 'This phone is connected. Screenshot watching can stay in the background.',
+          payload,
+          workspaceId: response.workspaceId,
+          deviceId: response.deviceId,
+        });
+      } catch (error) {
+        const nextMessage = error instanceof Error ? error.message : 'Could not read that QR code.';
+        const debugString = toPairingDebugString(error);
+
+        logPairingError('scan-complete', error, {
+          configuredServerUrl: process.env.EXPO_PUBLIC_SERVER_URL ?? null,
+        });
+        setLastErrorDebug(debugString);
+        setPairingState({
+          phase: 'error',
+          message: nextMessage,
+          payload: null,
+          workspaceId: null,
+          deviceId: null,
+        });
+      }
+    },
+    [scanLocked],
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          <Text style={styles.eyebrow}>Android Prototype</Text>
-          <Text style={styles.title}>Screenshot Sync</Text>
-          <Text style={styles.subtitle}>
-            Bootstrapped shell for MediaStore detection, upload queueing, and background sync.
-          </Text>
-        </View>
+      <View style={styles.screen}>
+        <View style={styles.card}>
+          <View style={styles.headerRow}>
+            <Text style={styles.eyebrow}>Pairing</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{phase === 'paired' ? 'LIVE' : phase === 'pairing' ? 'SYNCING' : phase === 'error' ? 'ERROR' : 'READY'}</Text>
+            </View>
+          </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bootstrap status</Text>
-          {loading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color="#d3ff75" />
-              <Text style={styles.loadingText}>Preparing local storage and debug surface...</Text>
-            </View>
-          ) : null}
-          {error ? (
-            <View style={[styles.card, styles.errorCard]}>
-              <Text style={styles.errorLabel}>Initialization failed</Text>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-          {!loading && !error ? (
-            <View style={styles.card}>
-              <Row label="Queue table" value={diagnostics.queueTableReady ? "ready" : "missing"} />
-              <Row label="Database path" value={diagnostics.databasePath} />
-              <Row label="Last checked" value={diagnostics.lastCheckedAt ?? "just now"} />
-            </View>
-          ) : null}
-          <Pressable style={styles.button} onPress={() => void refreshDiagnostics()}>
-            <Text style={styles.buttonText}>Refresh bootstrap check</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Screenshot detector</Text>
-          <View style={styles.card}>
-            <Row label="Native module" value={detectorAvailable ? "available" : "missing"} />
-            <Row label="Watching" value={detectorStatus.isWatching ? "yes" : "no"} />
-            <Row label="Seen screenshots" value={String(detectorStatus.seenItemCount)} />
-            <Row label="Permission" value={permissionState} />
-            <View style={styles.actionRow}>
-              <Pressable style={[styles.button, styles.actionButton]} onPress={() => void handleStartDetector()}>
-                <Text style={styles.buttonText}>Start detector</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.button, styles.actionButton, styles.secondaryButton]}
-                onPress={() => void handleStopDetector()}
+          <View style={styles.cameraShell}>
+            {permissionGranted && phase !== 'paired' ? (
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={phase === 'pairing' ? undefined : handleBarcodeScanned}
               >
-                <Text style={styles.secondaryButtonText}>Stop</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Max reliability mode</Text>
-          <View style={styles.card}>
-            <Row label="Enabled" value={reliabilityStatus.enabled ? "yes" : "no"} />
-            <Row label="Service running" value={reliabilityStatus.serviceRunning ? "yes" : "no"} />
-            <Row
-              label="Last background scan"
-              value={reliabilityStatus.lastScanAt > 0 ? new Date(reliabilityStatus.lastScanAt).toLocaleTimeString() : "never"}
-            />
-            <Text style={styles.helperText}>
-              Keeps a persistent Android notification alive and runs screenshot detection from a native foreground service.
-            </Text>
-            <View style={styles.actionRow}>
-              <Pressable style={[styles.button, styles.actionButton]} onPress={() => void handleStartReliabilityMode()}>
-                <Text style={styles.buttonText}>Start always-on mode</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.button, styles.actionButton, styles.secondaryButton]}
-                onPress={() => void handleStopReliabilityMode()}
-              >
-                <Text style={styles.secondaryButtonText}>Stop</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Queue summary</Text>
-          <View style={styles.card}>
-            <Row label="Total items" value={String(queueSummary.total)} />
-            <Row label="Queued" value={String(queueSummary.queued)} />
-            <Row label="Uploading" value={String(queueSummary.uploading)} />
-            <Row label="Uploaded" value={String(queueSummary.uploaded)} />
-            <Row label="Failed" value={String(queueSummary.failed)} />
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Next milestones</Text>
-          <View style={styles.card}>
-            <Milestone title="Native detector" body="Add a Kotlin module that emits new screenshot candidates from MediaStore." />
-            <Milestone title="Persistent queue" body="Track queued, uploading, uploaded, and failed screenshots in SQLite." />
-            <Milestone title="Max reliability mode" body="Keep a foreground service alive and reconcile missed screenshots in the background." />
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detected screenshots</Text>
-          <View style={styles.card}>
-            {detectedScreenshots.length === 0 ? (
-              <Text style={styles.emptyText}>Start the detector and take a screenshot on the device.</Text>
-            ) : (
-              detectedScreenshots.map((item) => (
-                <View key={item.id} style={styles.queueItem}>
-                  <View style={styles.queueText}>
-                    <Text style={styles.queueName}>{item.fileName}</Text>
-                    <Text style={styles.queueId}>{item.relativePath || item.uri}</Text>
+                <View style={styles.cameraShadeTop} />
+                <View style={styles.cameraMiddleRow}>
+                  <View style={styles.cameraShadeSide} />
+                  <View style={styles.scanFrame}>
+                    <View style={[styles.corner, styles.cornerTopLeft]} />
+                    <View style={[styles.corner, styles.cornerTopRight]} />
+                    <View style={[styles.corner, styles.cornerBottomLeft]} />
+                    <View style={[styles.corner, styles.cornerBottomRight]} />
                   </View>
-                  <Text style={styles.queueState}>#{item.sequence}</Text>
+                  <View style={styles.cameraShadeSide} />
                 </View>
-              ))
+                <View style={styles.cameraShadeBottom} />
+              </CameraView>
+            ) : (
+              <View style={styles.placeholderPane}>
+                {phase === 'pairing' ? <ActivityIndicator color={zenTheme.accent} size="large" /> : null}
+                <Text style={styles.placeholderTitle}>{phase === 'paired' ? 'Connected' : 'Scanner'}</Text>
+                <Text style={styles.placeholderBody}>{message}</Text>
+              </View>
             )}
           </View>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Queued screenshots</Text>
-          <View style={styles.card}>
-            {queueItems.length === 0 ? (
-              <Text style={styles.emptyText}>No queued screenshots yet. Start the detector and take one.</Text>
-            ) : (
-              queueItems.map((item) => (
-                <View key={item.id} style={styles.queueItem}>
-                  <View style={styles.queueText}>
-                    <Text style={styles.queueName}>{item.fileName}</Text>
-                    <Text style={styles.queueId}>{item.relativePath || item.uri}</Text>
-                  </View>
-                  <Text style={styles.queueState}>{item.status}</Text>
-                </View>
-              ))
-            )}
+          <View style={styles.footerRow}>
+            <View style={styles.metaBlock}>
+              <Text style={styles.metaLabel}>Workspace</Text>
+              <Text style={styles.metaValue}>{pairingState.workspaceId ? pairingState.workspaceId.slice(0, 8) : '--------'}</Text>
+            </View>
+            <Pressable style={styles.actionButton} onPress={permissionGranted ? resetScanner : handleRequestPermission}>
+              <Text style={styles.actionButtonText}>{permissionGranted ? 'Scan again' : 'Allow camera'}</Text>
+            </Pressable>
           </View>
+
+          {lastErrorDebug ? (
+            <View style={styles.debugRow}>
+              <Text style={styles.debugLabel}>Debug</Text>
+              <Text style={styles.debugValue}>{lastErrorDebug}</Text>
+              <Text style={styles.debugHint}>server={(() => { try { return getConfiguredServerUrl(); } catch { return 'missing'; } })()}</Text>
+            </View>
+          ) : null}
+
+          {pairingState.deviceId ? (
+            <View style={styles.deviceRow}>
+              <Text style={styles.deviceLabel}>Connected device</Text>
+              <Text style={styles.deviceValue}>{pairingState.deviceId.slice(0, 12)}</Text>
+            </View>
+          ) : null}
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
-    </View>
-  );
-}
-
-function Milestone({ title, body }: { title: string; body: string }) {
-  return (
-    <View style={styles.milestone}>
-      <Text style={styles.milestoneTitle}>{title}</Text>
-      <Text style={styles.milestoneBody}>{body}</Text>
-    </View>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#090b10",
+    backgroundColor: zenTheme.background,
   },
-  content: {
+  screen: {
+    flex: 1,
+    backgroundColor: zenTheme.background,
     paddingHorizontal: 20,
-    paddingVertical: 24,
-    gap: 24,
-  },
-  hero: {
-    gap: 10,
-  },
-  eyebrow: {
-    color: "#d3ff75",
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-  title: {
-    color: "#f4f7fb",
-    fontSize: 34,
-    fontWeight: "800",
-  },
-  subtitle: {
-    color: "#98a3b3",
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  section: {
-    gap: 12,
-  },
-  sectionTitle: {
-    color: "#f4f7fb",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  loadingRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  loadingText: {
-    color: "#98a3b3",
-    fontSize: 14,
+    paddingVertical: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   card: {
-    backgroundColor: "#10141d",
-    borderColor: "#1d2531",
-    borderRadius: 18,
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 28,
     borderWidth: 1,
-    gap: 14,
-    padding: 16,
+    borderColor: zenTheme.border,
+    backgroundColor: zenTheme.card,
+    padding: 20,
+    gap: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 12,
   },
-  errorCard: {
-    borderColor: "#61383b",
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  errorLabel: {
-    color: "#ffb3b8",
-    fontSize: 14,
-    fontWeight: "700",
+  eyebrow: {
+    color: zenTheme.muted,
+    fontSize: 13,
+    letterSpacing: 5,
+    textTransform: 'uppercase',
   },
-  errorText: {
-    color: "#e8a4aa",
-    fontSize: 14,
-    lineHeight: 20,
+  badge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: zenTheme.border,
+    backgroundColor: zenTheme.backgroundSoft,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  row: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+  badgeText: {
+    color: zenTheme.foreground,
+    fontSize: 11,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+  cameraShell: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: zenTheme.borderSoft,
+    backgroundColor: zenTheme.cardStrong,
+    aspectRatio: 1,
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraShadeTop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  cameraMiddleRow: {
+    flexDirection: 'row',
+    height: '52%',
+  },
+  cameraShadeSide: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  cameraShadeBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  scanFrame: {
+    flex: 4.2,
+    borderRadius: 26,
+    position: 'relative',
+  },
+  corner: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderColor: zenTheme.accent,
+  },
+  cornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderLeftWidth: 4,
+    borderTopWidth: 4,
+    borderTopLeftRadius: 18,
+  },
+  cornerTopRight: {
+    top: 0,
+    right: 0,
+    borderRightWidth: 4,
+    borderTopWidth: 4,
+    borderTopRightRadius: 18,
+  },
+  cornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderLeftWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomLeftRadius: 18,
+  },
+  cornerBottomRight: {
+    bottom: 0,
+    right: 0,
+    borderRightWidth: 4,
+    borderBottomWidth: 4,
+    borderBottomRightRadius: 18,
+  },
+  placeholderPane: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    gap: 10,
+  },
+  placeholderTitle: {
+    color: zenTheme.foreground,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '500',
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: undefined }),
+  },
+  placeholderBody: {
+    color: zenTheme.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 16,
   },
-  rowLabel: {
-    color: "#98a3b3",
-    fontSize: 14,
-  },
-  rowValue: {
-    color: "#f4f7fb",
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "right",
-  },
-  button: {
-    alignItems: "center",
-    backgroundColor: "#d3ff75",
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  buttonText: {
-    color: "#090b10",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-  },
-  secondaryButton: {
-    backgroundColor: "#151b24",
-    borderColor: "#263143",
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    color: "#f4f7fb",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  helperText: {
-    color: "#98a3b3",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  milestone: {
-    gap: 6,
-  },
-  milestoneTitle: {
-    color: "#f4f7fb",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  milestoneBody: {
-    color: "#98a3b3",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  queueItem: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  queueText: {
+  metaBlock: {
     flex: 1,
     gap: 4,
   },
-  queueName: {
-    color: "#f4f7fb",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  queueId: {
-    color: "#6f7c8f",
+  metaLabel: {
+    color: zenTheme.muted,
     fontSize: 12,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
-  queueState: {
-    color: "#d3ff75",
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase",
+  metaValue: {
+    color: zenTheme.foreground,
+    fontSize: 16,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
   },
-  emptyText: {
-    color: "#98a3b3",
+  actionButton: {
+    borderRadius: 999,
+    backgroundColor: zenTheme.accent,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  actionButtonText: {
+    color: zenTheme.accentInk,
     fontSize: 14,
-    lineHeight: 20,
+    fontWeight: '600',
+  },
+  debugRow: {
+    borderTopWidth: 1,
+    borderTopColor: zenTheme.borderSoft,
+    paddingTop: 16,
+    gap: 6,
+  },
+  debugLabel: {
+    color: zenTheme.muted,
+    fontSize: 12,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+  },
+  debugValue: {
+    color: zenTheme.danger,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+  },
+  debugHint: {
+    color: zenTheme.mutedSoft,
+    fontSize: 11,
+    lineHeight: 16,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+  },
+  deviceRow: {
+    borderTopWidth: 1,
+    borderTopColor: zenTheme.borderSoft,
+    paddingTop: 16,
+    gap: 6,
+  },
+  deviceLabel: {
+    color: zenTheme.muted,
+    fontSize: 12,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+  },
+  deviceValue: {
+    color: zenTheme.success,
+    fontSize: 15,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
   },
 });

@@ -18,6 +18,7 @@
     "android": {
       "package": "com.sanatan.screenshotsync",
       "permissions": [
+        "CAMERA",
         "READ_MEDIA_IMAGES",
         "POST_NOTIFICATIONS"
       ],
@@ -31,7 +32,13 @@
     },
     "plugins": [
       "expo-dev-client",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Screenshot Sync uses your camera to scan pairing codes."
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

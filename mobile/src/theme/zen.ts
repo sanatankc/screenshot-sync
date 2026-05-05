@@ -1,0 +1,15 @@
+export const zenTheme = {
+  background: '#191817',
+  backgroundSoft: '#1f1e1c',
+  card: '#23211f',
+  cardStrong: '#171614',
+  border: '#302d2a',
+  borderSoft: '#2a2724',
+  foreground: '#ebe5d8',
+  muted: '#a7a096',
+  mutedSoft: '#7f786f',
+  accent: '#e5dece',
+  accentInk: '#2f2c28',
+  success: '#bcd4a7',
+  danger: '#f2b2a6',
+};
