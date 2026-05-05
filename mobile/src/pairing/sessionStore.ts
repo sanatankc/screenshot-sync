@@ -8,6 +8,11 @@ export type PairedDeviceSession = {
   connectedAt: string;
 };
 
+export type DeviceIdentity = {
+  value: string;
+  createdAt: string;
+};
+
 export async function loadPairedDeviceSession(): Promise<PairedDeviceSession | null> {
   const row = database.getFirstSync<{
     workspace_id: string;
@@ -55,4 +60,40 @@ export async function savePairedDeviceSession(session: PairedDeviceSession) {
 
 export async function clearPairedDeviceSession() {
   database.runSync('DELETE FROM paired_device_session WHERE id = 1;');
+}
+
+export async function loadDeviceIdentity(): Promise<DeviceIdentity | null> {
+  const row = database.getFirstSync<{
+    value: string;
+    created_at: string;
+  }>(
+    `
+      SELECT value, created_at
+      FROM device_identity
+      WHERE id = 1
+      LIMIT 1;
+    `,
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    value: row.value,
+    createdAt: row.created_at,
+  };
+}
+
+export async function saveDeviceIdentity(identity: DeviceIdentity) {
+  database.runSync(
+    `
+      INSERT INTO device_identity (id, value, created_at)
+      VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        value = excluded.value,
+        created_at = excluded.created_at;
+    `,
+    [identity.value, identity.createdAt],
+  );
 }

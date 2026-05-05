@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 type PairingQrCardProps = {
   qrValue: string | null;
   workspaceId: string | null;
+  pairingSessionId: string | null;
   statusLabel: string;
   message: string;
   isReady: boolean;
@@ -18,6 +19,7 @@ type PairingQrCardProps = {
 export function PairingQrCard({
   qrValue,
   workspaceId,
+  pairingSessionId,
   statusLabel,
   message,
   isReady,
@@ -62,6 +64,15 @@ export function PairingQrCard({
                   className="h-full w-full"
                 />
               </div>
+            ) : workspaceId ? (
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                <div className="rounded-full border border-border/80 bg-background/80 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                  Restored
+                </div>
+                <p className="max-w-[16rem] text-sm leading-6 text-muted-foreground">
+                  This viewer is already attached to your phone workspace.
+                </p>
+              </div>
             ) : (
               <div className="flex h-full items-center justify-center p-5">
                 <Skeleton className="h-full w-full rounded-[calc(var(--radius)*1.2)]" />
@@ -72,9 +83,15 @@ export function PairingQrCard({
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">Workspace</span>
+            <span className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
+              {workspaceId ? "Workspace" : "Session"}
+            </span>
             <span className="truncate font-mono text-sm text-foreground">
-              {workspaceId ? workspaceId.slice(0, 8) : "--------"}
+              {workspaceId
+                ? workspaceId.slice(0, 8)
+                : pairingSessionId
+                  ? pairingSessionId.slice(0, 10)
+                  : "--------"}
             </span>
           </div>
           <Button variant="secondary" size="sm" className="rounded-full" onClick={onRefresh}>
@@ -84,7 +101,7 @@ export function PairingQrCard({
         </div>
 
         <div className="text-center text-sm text-muted-foreground">
-          {isReady ? message : "Preparing session"}
+          {isReady || Boolean(workspaceId) ? message : "Preparing session"}
         </div>
       </CardContent>
     </Card>

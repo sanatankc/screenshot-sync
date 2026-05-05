@@ -45,6 +45,14 @@ export async function ensureAppStorage() {
       connected_at TEXT NOT NULL
     );
   `);
+
+  database.execSync(`
+    CREATE TABLE IF NOT EXISTS device_identity (
+      id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+      value TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
 }
 
 export async function loadBootstrapDiagnostics(): Promise<BootstrapDiagnostics> {

@@ -1,7 +1,5 @@
 export type PairingQrPayload = {
   type: "screenshot-sync-pairing";
-  serverUrl: string;
-  workspaceId: string;
   pairingSessionId: string;
   pairingToken: string;
 };
@@ -11,7 +9,6 @@ export type PairingSessionCreateRequest = {
 };
 
 export type PairingSessionCreateResponse = {
-  workspaceId: string;
   pairingSessionId: string;
   pairingToken: string;
   webSessionToken: string;
@@ -20,10 +17,10 @@ export type PairingSessionCreateResponse = {
 };
 
 export type PairingCompleteRequest = {
-  workspaceId: string;
   pairingSessionId: string;
   pairingToken: string;
   device: {
+    deviceIdentity: string;
     platform: "android";
     deviceName: string;
     appVersion: string;
@@ -34,6 +31,12 @@ export type PairingCompleteResponse = {
   workspaceId: string;
   deviceId: string;
   deviceToken: string;
+};
+
+export type ViewerSessionRestoreResponse = {
+  viewerSessionId: string;
+  workspaceId: string;
+  clientName: string | null;
 };
 
 export type PairingSessionStatus = "pending" | "paired" | "expired" | "cancelled";

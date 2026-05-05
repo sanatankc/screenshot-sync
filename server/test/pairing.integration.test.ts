@@ -1,20 +1,28 @@
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import { devices, pairingSessions, workspaces } from "@screenshot-sync/db-schema";
+import { devices, pairingSessions, viewerSessions, workspaces } from "@screenshot-sync/db-schema";
 import type {
   PairingCompleteResponse,
   PairingSessionCreateResponse,
+  ViewerSessionRestoreResponse,
 } from "@screenshot-sync/contracts";
 import { describe, expect, it } from "vitest";
 import { WorkspaceHub } from "../src";
 
 const db = drizzle(env.DB, {
-  schema: { devices, pairingSessions, workspaces },
+  schema: { devices, pairingSessions, viewerSessions, workspaces },
 });
 
+const devicePayload = {
+  deviceIdentity: "device_identity_pixel_8",
+  platform: "android" as const,
+  deviceName: "Pixel 8",
+  appVersion: "1.0.0",
+};
+
 describe("pairing routes", () => {
-  it("creates a pairing session with workspace, viewer session, and qr payload", async () => {
+  it("creates only a temporary pairing session and viewer session", async () => {
     const response = await SELF.fetch("http://example.com/api/pairing/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -24,22 +32,24 @@ describe("pairing routes", () => {
     expect(response.status).toBe(201);
 
     const data = await response.json<PairingSessionCreateResponse>();
-    expect(data.workspaceId).toMatch(/^ws_/);
     expect(data.pairingSessionId).toMatch(/^pair_/);
     expect(data.pairingToken).toMatch(/^pairtok_/);
     expect(data.webSessionToken).toMatch(/^webtok_/);
-    expect(data.qrPayload.workspaceId).toBe(data.workspaceId);
     expect(data.qrPayload.pairingSessionId).toBe(data.pairingSessionId);
 
     const pairingSession = await db.query.pairingSessions.findFirst({
       where: eq(pairingSessions.id, data.pairingSessionId),
     });
-    const workspace = await db.query.workspaces.findFirst({
-      where: eq(workspaces.id, data.workspaceId),
+    const viewerSession = await db.query.viewerSessions.findFirst({
+      where: eq(viewerSessions.id, pairingSession!.viewerSessionId!),
     });
+    const allWorkspaces = await db.query.workspaces.findMany();
 
     expect(pairingSession?.status).toBe("pending");
-    expect(workspace?.name).toBe("Sanatan Chrome");
+    expect(pairingSession?.workspaceId).toBeNull();
+    expect(viewerSession?.workspaceId).toBeNull();
+    expect(viewerSession?.clientName).toBe("Sanatan Chrome");
+    expect(allWorkspaces).toHaveLength(0);
   });
 
   it("rejects invalid pairing completion tokens", async () => {
@@ -54,14 +64,9 @@ describe("pairing routes", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        workspaceId: created.workspaceId,
         pairingSessionId: created.pairingSessionId,
         pairingToken: "pairtok_invalid",
-        device: {
-          platform: "android",
-          deviceName: "Pixel 8",
-          appVersion: "1.0.0",
-        },
+        device: devicePayload,
       }),
     });
 
@@ -69,11 +74,112 @@ describe("pairing routes", () => {
     expect(await response.json()).toEqual({ ok: false, error: "PAIRING_SESSION_INVALID" });
   });
 
-  it("completes pairing, creates a device, and stores the pairing event in the workspace hub", async () => {
+  it("creates one permanent workspace for the first pairing and reuses it for later desktops", async () => {
+    const firstCreate = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "MacBook Chrome" }),
+    });
+    const firstSession = await firstCreate.json<PairingSessionCreateResponse>();
+
+    const firstCompleteResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: firstSession.pairingSessionId,
+        pairingToken: firstSession.pairingToken,
+        device: devicePayload,
+      }),
+    });
+
+    expect(firstCompleteResponse.status).toBe(200);
+    const firstComplete = await firstCompleteResponse.json<PairingCompleteResponse>();
+
+    const secondCreate = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "Studio Display Safari" }),
+    });
+    const secondSession = await secondCreate.json<PairingSessionCreateResponse>();
+
+    const secondCompleteResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: secondSession.pairingSessionId,
+        pairingToken: secondSession.pairingToken,
+        device: {
+          ...devicePayload,
+          appVersion: "1.0.1",
+        },
+      }),
+    });
+
+    expect(secondCompleteResponse.status).toBe(200);
+    const secondComplete = await secondCompleteResponse.json<PairingCompleteResponse>();
+
+    expect(secondComplete.workspaceId).toBe(firstComplete.workspaceId);
+    expect(secondComplete.deviceId).toBe(firstComplete.deviceId);
+    expect(secondComplete.deviceToken).not.toBe(firstComplete.deviceToken);
+
+    const allWorkspaces = await db.query.workspaces.findMany();
+    const allDevices = await db.query.devices.findMany();
+
+    expect(allWorkspaces).toHaveLength(1);
+    expect(allDevices).toHaveLength(1);
+
+    const pairingSession = await db.query.pairingSessions.findFirst({
+      where: eq(pairingSessions.id, secondSession.pairingSessionId),
+    });
+    const viewerSession = await db.query.viewerSessions.findFirst({
+      where: eq(viewerSessions.id, pairingSession!.viewerSessionId!),
+    });
+    const device = await db.query.devices.findFirst({
+      where: eq(devices.id, firstComplete.deviceId),
+    });
+
+    expect(pairingSession?.workspaceId).toBe(firstComplete.workspaceId);
+    expect(pairingSession?.deviceId).toBe(firstComplete.deviceId);
+    expect(viewerSession?.workspaceId).toBe(firstComplete.workspaceId);
+    expect(device?.appVersion).toBe("1.0.1");
+  });
+
+  it("restores a viewer session back onto the existing workspace", async () => {
     const createResponse = await SELF.fetch("http://example.com/api/pairing/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientName: "Sanatan Chrome" }),
+      body: JSON.stringify({ clientName: "MacBook Chrome" }),
+    });
+    const created = await createResponse.json<PairingSessionCreateResponse>();
+
+    await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: created.pairingSessionId,
+        pairingToken: created.pairingToken,
+        device: devicePayload,
+      }),
+    });
+
+    const restoreResponse = await SELF.fetch("http://example.com/api/viewer/session", {
+      headers: {
+        authorization: `Bearer ${created.webSessionToken}`,
+      },
+    });
+
+    expect(restoreResponse.status).toBe(200);
+    const restored = await restoreResponse.json<ViewerSessionRestoreResponse>();
+    expect(restored.viewerSessionId).toMatch(/^view_/);
+    expect(restored.workspaceId).toMatch(/^ws_/);
+    expect(restored.clientName).toBe("MacBook Chrome");
+  });
+
+  it("stores the pairing event in both the pairing-session hub and the workspace hub", async () => {
+    const createResponse = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "MacBook Chrome" }),
     });
     const created = await createResponse.json<PairingSessionCreateResponse>();
 
@@ -81,50 +187,24 @@ describe("pairing routes", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        workspaceId: created.workspaceId,
         pairingSessionId: created.pairingSessionId,
         pairingToken: created.pairingToken,
-        device: {
-          platform: "android",
-          deviceName: "Pixel 8",
-          appVersion: "1.0.0",
-        },
+        device: devicePayload,
       }),
     });
-
-    expect(completeResponse.status).toBe(200);
-
     const completed = await completeResponse.json<PairingCompleteResponse>();
-    expect(completed.workspaceId).toBe(created.workspaceId);
-    expect(completed.deviceId).toMatch(/^dev_/);
-    expect(completed.deviceToken).toMatch(/^devtok_/);
 
-    const workspace = await db.query.workspaces.findFirst({
-      where: eq(workspaces.id, created.workspaceId),
-    });
-    const pairingSession = await db.query.pairingSessions.findFirst({
-      where: eq(pairingSessions.id, created.pairingSessionId),
-    });
-    const device = await db.query.devices.findFirst({
-      where: eq(devices.id, completed.deviceId),
-    });
+    const pairingStub = env.WORKSPACE_HUB.get(env.WORKSPACE_HUB.idFromName(`pairing:${created.pairingSessionId}`));
+    const workspaceStub = env.WORKSPACE_HUB.get(env.WORKSPACE_HUB.idFromName(`workspace:${completed.workspaceId}`));
 
-    expect(workspace?.activeDeviceId).toBe(completed.deviceId);
-    expect(pairingSession?.status).toBe("paired");
-    expect(pairingSession?.deviceId).toBe(completed.deviceId);
-    expect(device?.deviceName).toBe("Pixel 8");
+    const [pairingEvent, workspaceEvent] = await Promise.all([
+      runInDurableObject(pairingStub, (_instance: WorkspaceHub, state) => state.storage.get("lastPairingUpdatedEvent")),
+      runInDurableObject(workspaceStub, (_instance: WorkspaceHub, state) => state.storage.get("lastPairingUpdatedEvent")),
+    ]);
 
-    const durableObjectId = env.WORKSPACE_HUB.idFromName(created.workspaceId);
-    const stub = env.WORKSPACE_HUB.get(durableObjectId);
-
-    const storedEvent = await runInDurableObject(stub, (instance: WorkspaceHub, state) => {
-      void instance;
-      return state.storage.get("lastPairingUpdatedEvent");
-    });
-
-    expect(storedEvent).toEqual({
+    expect(pairingEvent).toEqual({
       type: "pairing.updated",
-      workspaceId: created.workspaceId,
+      workspaceId: completed.workspaceId,
       pairingSessionId: created.pairingSessionId,
       status: "paired",
       device: {
@@ -132,5 +212,6 @@ describe("pairing routes", () => {
         deviceName: "Pixel 8",
       },
     });
+    expect(workspaceEvent).toEqual(pairingEvent);
   });
 });

@@ -7,8 +7,8 @@ import type {
 } from "@screenshot-sync/contracts";
 import type { Env } from "@server/lib/env";
 
-export async function publishWorkspaceEvent(env: Env, workspaceId: string, event: WorkspaceEvent) {
-  const stub = env.WORKSPACE_HUB.get(env.WORKSPACE_HUB.idFromName(workspaceId));
+async function publishChannelEvent(env: Env, channelId: string, event: WorkspaceEvent) {
+  const stub = env.WORKSPACE_HUB.get(env.WORKSPACE_HUB.idFromName(channelId));
 
   await stub.fetch("https://workspace-hub.internal/events", {
     method: "POST",
@@ -17,6 +17,14 @@ export async function publishWorkspaceEvent(env: Env, workspaceId: string, event
     },
     body: JSON.stringify(event),
   });
+}
+
+export function publishPairingSessionEvent(env: Env, pairingSessionId: string, event: PairingUpdatedEvent) {
+  return publishChannelEvent(env, `pairing:${pairingSessionId}`, event);
+}
+
+export async function publishWorkspaceEvent(env: Env, workspaceId: string, event: WorkspaceEvent) {
+  return publishChannelEvent(env, `workspace:${workspaceId}`, event);
 }
 
 export function publishPairingUpdated(env: Env, workspaceId: string, event: PairingUpdatedEvent) {

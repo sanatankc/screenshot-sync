@@ -19,6 +19,7 @@ export const workspaces = sqliteTable("workspaces", {
 export const devices = sqliteTable("devices", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull(),
+  deviceIdentityHash: text("device_identity_hash").notNull(),
   deviceTokenHash: text("device_token_hash").notNull(),
   platform: text("platform").$type<DevicePlatform>().notNull(),
   deviceName: text("device_name").notNull(),
@@ -27,6 +28,7 @@ export const devices = sqliteTable("devices", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 }, (table) => ({
+  deviceIdentityHashUnique: uniqueIndex("devices_identity_hash_unique").on(table.deviceIdentityHash),
   deviceTokenHashUnique: uniqueIndex("devices_token_hash_unique").on(table.deviceTokenHash),
   workspaceIndex: index("devices_workspace_idx").on(table.workspaceId),
   workspaceLastSeenIndex: index("devices_workspace_last_seen_idx").on(table.workspaceId, table.lastSeenAt),
@@ -34,7 +36,7 @@ export const devices = sqliteTable("devices", {
 
 export const pairingSessions = sqliteTable("pairing_sessions", {
   id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull(),
+  workspaceId: text("workspace_id"),
   pairingTokenHash: text("pairing_token_hash").notNull(),
   status: text("status").$type<PairingSessionStatus>().notNull(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
@@ -51,7 +53,7 @@ export const pairingSessions = sqliteTable("pairing_sessions", {
 
 export const viewerSessions = sqliteTable("viewer_sessions", {
   id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull(),
+  workspaceId: text("workspace_id"),
   sessionTokenHash: text("session_token_hash").notNull(),
   clientName: text("client_name"),
   lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),

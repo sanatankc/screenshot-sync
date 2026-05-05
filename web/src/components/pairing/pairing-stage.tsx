@@ -5,6 +5,7 @@ type PairingStageProps = {
   phase: "booting" | "waiting" | "paired" | "error";
   connectionState: "idle" | "connecting" | "open" | "closed" | "error";
   session: PairingSessionCreateResponse | null;
+  workspaceId: string | null;
   pairedDeviceName: string | null;
   error: string | null;
   onRefresh: () => void;
@@ -22,6 +23,7 @@ export function PairingStage({
   phase,
   connectionState,
   session,
+  workspaceId,
   pairedDeviceName,
   error,
   onRefresh,
@@ -36,7 +38,8 @@ export function PairingStage({
     <section className="flex w-full justify-center animate-in fade-in zoom-in-95 duration-500">
       <PairingQrCard
         qrValue={qrValue}
-        workspaceId={session?.workspaceId ?? null}
+        workspaceId={workspaceId}
+        pairingSessionId={session?.pairingSessionId ?? null}
         statusLabel={statusLabel}
         message={message}
         isReady={Boolean(qrValue)}

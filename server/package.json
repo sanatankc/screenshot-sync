@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
-    "db:migrate:local": "sh -c 'for f in drizzle/*.sql; do wrangler d1 execute DB --local --file=\"$f\"; done'"
+    "db:migrate:local": "sh -c 'rm -rf migrations && mkdir -p migrations && cp drizzle/*.sql migrations/ && wrangler d1 migrations apply DB --local'",
+    "db:reset:local": "sh -c 'rm -rf .wrangler/state && pnpm run db:migrate:local'"
   },
   "dependencies": {
     "drizzle-orm": "^0.44.1",

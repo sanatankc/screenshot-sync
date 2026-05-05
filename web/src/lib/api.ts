@@ -1,4 +1,4 @@
-import type { PairingSessionCreateResponse } from "@screenshot-sync/contracts";
+import type { PairingSessionCreateResponse, ViewerSessionRestoreResponse } from "@screenshot-sync/contracts";
 
 export async function createPairingSession(apiBaseUrl: string): Promise<PairingSessionCreateResponse> {
   const response = await fetch(`${apiBaseUrl}/api/pairing/session`, {
@@ -14,4 +14,21 @@ export async function createPairingSession(apiBaseUrl: string): Promise<PairingS
   }
 
   return response.json() as Promise<PairingSessionCreateResponse>;
+}
+
+export async function restoreViewerSession(
+  apiBaseUrl: string,
+  webSessionToken: string,
+): Promise<ViewerSessionRestoreResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/viewer/session`, {
+    headers: {
+      authorization: `Bearer ${webSessionToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("VIEWER_SESSION_RESTORE_FAILED");
+  }
+
+  return response.json() as Promise<ViewerSessionRestoreResponse>;
 }

@@ -10,13 +10,15 @@ import type {
   ScreenshotRecord,
   WorkspaceEvent,
 } from "@screenshot-sync/contracts";
-import type { ScreenshotRow } from "@screenshot-sync/db-schema";
+import { eq, and } from "drizzle-orm";
+import { pairingSessions, type ScreenshotRow } from "@screenshot-sync/db-schema";
 import type { Env } from "@server/lib/env";
 import { WorkspaceHub } from "@server/durable/workspace-hub";
 import { deviceAuth, type AppVariables, viewerAuth } from "@server/lib/middleware";
 import { readBearerToken, requireViewerSession } from "@server/lib/auth";
+import { getDb } from "@server/lib/db";
 import { toScreenshotRecord } from "@server/lib/mappers";
-import { completePairing, createPairingSession } from "@server/lib/pairing";
+import { completePairing, createPairingSession, restoreViewerSession } from "@server/lib/pairing";
 import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromUploadPath, storeUpload } from "@server/lib/uploads";
@@ -100,8 +102,7 @@ app.get("/health", (c) => {
 
 app.post("/api/pairing/session", async (c) => {
   const payload = (await c.req.json().catch(() => ({}))) as PairingSessionCreateRequest;
-  const serverUrl = new URL(c.req.url).origin;
-  const result = await createPairingSession(c.env, payload, serverUrl);
+  const result = await createPairingSession(c.env, payload);
   return c.json(result, 201);
 });
 
@@ -125,8 +126,22 @@ app.post("/api/pairing/complete", async (c) => {
   }
 });
 
+app.get("/api/viewer/session", viewerAuth, async (c) => {
+  try {
+    const viewerSession = c.get("viewerSession");
+    const result = await restoreViewerSession(c.env, viewerSession.id);
+    return c.json(result, 200);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "VIEWER_SESSION_NOT_RESTORABLE";
+    return c.json({ ok: false, error: message }, 404);
+  }
+});
+
 app.get("/api/screenshots", viewerAuth, async (c) => {
   const viewerSession = c.get("viewerSession");
+  if (!viewerSession.workspaceId) {
+    return c.json({ ok: false, error: "VIEWER_SESSION_NOT_RESTORABLE" }, 409);
+  }
   const result = await listScreenshots(c.env, viewerSession.workspaceId, c.req.query("limit") ?? null);
   return c.json(result, 200);
 });
@@ -243,11 +258,38 @@ app.get("/api/workspaces/:workspaceId/ws", async (c) => {
   try {
     const viewerSession = await requireViewerSession(c.env, token ? `Bearer ${token}` : null);
 
-    if (viewerSession.workspaceId !== workspaceId) {
+    if (!viewerSession.workspaceId || viewerSession.workspaceId !== workspaceId) {
       return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
     }
 
-    const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(workspaceId));
+    const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(`workspace:${workspaceId}`));
+    const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
+    return stub.fetch(websocketRequest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";
+    return c.json({ ok: false, error: message }, 401);
+  }
+});
+
+app.get("/api/pairing-sessions/:pairingSessionId/ws", async (c) => {
+  const pairingSessionId = c.req.param("pairingSessionId");
+  const token = c.req.query("token") ?? readBearerToken(c.req.header("authorization") ?? null);
+
+  try {
+    const viewerSession = await requireViewerSession(c.env, token ? `Bearer ${token}` : null);
+    const db = getDb(c.env);
+    const pairingSession = await db.query.pairingSessions.findFirst({
+      where: and(
+        eq(pairingSessions.id, pairingSessionId),
+        eq(pairingSessions.viewerSessionId, viewerSession.id),
+      ),
+    });
+
+    if (!pairingSession) {
+      return c.json({ ok: false, error: "PAIRING_SESSION_FORBIDDEN" }, 403);
+    }
+
+    const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(`pairing:${pairingSessionId}`));
     const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
     return stub.fetch(websocketRequest);
   } catch (error) {

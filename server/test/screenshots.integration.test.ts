@@ -30,10 +30,10 @@ async function createPairedContext() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      workspaceId: pairingSession.workspaceId,
       pairingSessionId: pairingSession.pairingSessionId,
       pairingToken: pairingSession.pairingToken,
       device: {
+        deviceIdentity: "device_identity_pixel_8",
         platform: "android",
         deviceName: "Pixel 8",
         appVersion: "1.0.0",
@@ -43,7 +43,7 @@ async function createPairedContext() {
   const pairingComplete = await pairingCompleteResponse.json<PairingCompleteResponse>();
 
   return {
-    workspaceId: pairingSession.workspaceId,
+    workspaceId: pairingComplete.workspaceId,
     webSessionToken: pairingSession.webSessionToken,
     deviceToken: pairingComplete.deviceToken,
     deviceId: pairingComplete.deviceId,

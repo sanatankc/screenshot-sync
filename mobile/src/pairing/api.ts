@@ -10,8 +10,6 @@ function isPairingQrPayload(value: unknown): value is PairingQrPayload {
 
   return (
     candidate.type === 'screenshot-sync-pairing' &&
-    typeof candidate.serverUrl === 'string' &&
-    typeof candidate.workspaceId === 'string' &&
     typeof candidate.pairingSessionId === 'string' &&
     typeof candidate.pairingToken === 'string'
   );
@@ -48,15 +46,16 @@ export function getConfiguredServerUrl() {
 
 export async function completePairingSession(
   qrPayload: PairingQrPayload,
+  deviceIdentity: string,
   deviceName: string,
   appVersion: string,
 ): Promise<PairingCompleteResponse> {
   const serverUrl = getConfiguredServerUrl();
   const request: PairingCompleteRequest = {
-    workspaceId: qrPayload.workspaceId,
     pairingSessionId: qrPayload.pairingSessionId,
     pairingToken: qrPayload.pairingToken,
     device: {
+      deviceIdentity,
       platform: 'android',
       deviceName,
       appVersion,
@@ -76,7 +75,6 @@ export async function completePairingSession(
   } catch (error) {
     throw new PairingFlowError('Could not reach the pairing server.', 'PAIRING_NETWORK_FAILED', {
       serverUrl,
-      workspaceId: qrPayload.workspaceId,
       pairingSessionId: qrPayload.pairingSessionId,
       cause: error instanceof Error ? error.message : String(error),
     });
@@ -99,7 +97,6 @@ export async function completePairingSession(
     throw new PairingFlowError(message, 'PAIRING_REQUEST_FAILED', {
       serverUrl,
       status: response.status,
-      workspaceId: qrPayload.workspaceId,
       pairingSessionId: qrPayload.pairingSessionId,
       serverError,
     });

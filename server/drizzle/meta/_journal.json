@@ -8,6 +8,13 @@
       "when": 1777853737128,
       "tag": "0000_bouncy_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777968113750,
+      "tag": "0001_little_deathbird",
+      "breakpoints": true
     }
   ]
 }

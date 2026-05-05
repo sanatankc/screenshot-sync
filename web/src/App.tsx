@@ -11,6 +11,7 @@ export default function App() {
         phase={pairing.phase}
         connectionState={pairing.connectionState}
         session={pairing.session}
+        workspaceId={pairing.workspaceId}
         pairedDeviceName={pairing.pairedDeviceName}
         error={pairing.error}
         onRefresh={pairing.refresh}

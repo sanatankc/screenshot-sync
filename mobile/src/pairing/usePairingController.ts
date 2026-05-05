@@ -4,7 +4,9 @@ import { completePairingSession, getConfiguredServerUrl, parsePairingQrPayload }
 import { logPairingError, toPairingDebugString } from './logging';
 import {
   clearPairedDeviceSession,
+  loadDeviceIdentity,
   loadPairedDeviceSession,
+  saveDeviceIdentity,
   savePairedDeviceSession,
   type PairedDeviceSession,
 } from './sessionStore';
@@ -13,6 +15,14 @@ import type { PairingController, PairingState, PairingPhase } from './types';
 
 const APP_VERSION = '1.0.0';
 const DEVICE_NAME = 'Screenshot Sync Android';
+
+function createDeviceIdentityValue() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return `device_${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `device_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
 
 const initialState: PairingState = {
   phase: 'hydrating',
@@ -174,15 +184,22 @@ export function usePairingController(): PairingController {
 
       try {
         const payload = parsePairingQrPayload(data);
+        const deviceIdentity =
+          (await loadDeviceIdentity()) ?? {
+            value: createDeviceIdentityValue(),
+            createdAt: new Date().toISOString(),
+          };
+
+        await saveDeviceIdentity(deviceIdentity);
         setPairingState({
           phase: 'pairing',
           message: 'Connecting this phone…',
           payload,
-          workspaceId: payload.workspaceId,
+          workspaceId: null,
           deviceId: null,
         });
 
-        const response = await completePairingSession(payload, DEVICE_NAME, APP_VERSION);
+        const response = await completePairingSession(payload, deviceIdentity.value, DEVICE_NAME, APP_VERSION);
         const session: PairedDeviceSession = {
           workspaceId: response.workspaceId,
           deviceId: response.deviceId,

@@ -23,7 +23,7 @@ function waitForMessage(socket: WebSocket): Promise<WorkspaceEvent> {
 }
 
 describe("workspace hub", () => {
-  it("broadcasts pairing and screenshot events to subscribed viewers", async () => {
+  it("broadcasts pairing events on the pairing channel and screenshot events on the workspace channel", async () => {
     const pairingSessionResponse = await SELF.fetch("http://example.com/api/pairing/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -31,27 +31,30 @@ describe("workspace hub", () => {
     });
     const pairingSession = await pairingSessionResponse.json<PairingSessionCreateResponse>();
 
-    const wsResponse = await SELF.fetch(`http://example.com/api/workspaces/${pairingSession.workspaceId}/ws?token=${pairingSession.webSessionToken}`, {
-      headers: {
-        Upgrade: "websocket",
+    const pairingWsResponse = await SELF.fetch(
+      `http://example.com/api/pairing-sessions/${pairingSession.pairingSessionId}/ws?token=${pairingSession.webSessionToken}`,
+      {
+        headers: {
+          Upgrade: "websocket",
+        },
       },
-    });
+    );
 
-    expect(wsResponse.status).toBe(101);
-    const socket = wsResponse.webSocket;
-    expect(socket).toBeTruthy();
-    socket!.accept();
+    expect(pairingWsResponse.status).toBe(101);
+    const pairingSocket = pairingWsResponse.webSocket;
+    expect(pairingSocket).toBeTruthy();
+    pairingSocket!.accept();
 
-    const pairingEventPromise = waitForMessage(socket!);
+    const pairingEventPromise = waitForMessage(pairingSocket!);
 
     const pairingCompleteResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        workspaceId: pairingSession.workspaceId,
         pairingSessionId: pairingSession.pairingSessionId,
         pairingToken: pairingSession.pairingToken,
         device: {
+          deviceIdentity: "device_identity_pixel_8",
           platform: "android",
           deviceName: "Pixel 8",
           appVersion: "1.0.0",
@@ -63,7 +66,7 @@ describe("workspace hub", () => {
     const pairingEvent = await pairingEventPromise;
     expect(pairingEvent).toEqual({
       type: "pairing.updated",
-      workspaceId: pairingSession.workspaceId,
+      workspaceId: pairingComplete.workspaceId,
       pairingSessionId: pairingSession.pairingSessionId,
       status: "paired",
       device: {
@@ -72,7 +75,23 @@ describe("workspace hub", () => {
       },
     });
 
-    const screenshotEventPromise = waitForMessage(socket!);
+    pairingSocket!.close(1000, "pairing done");
+
+    const workspaceWsResponse = await SELF.fetch(
+      `http://example.com/api/workspaces/${pairingComplete.workspaceId}/ws?token=${pairingSession.webSessionToken}`,
+      {
+        headers: {
+          Upgrade: "websocket",
+        },
+      },
+    );
+
+    expect(workspaceWsResponse.status).toBe(101);
+    const workspaceSocket = workspaceWsResponse.webSocket;
+    expect(workspaceSocket).toBeTruthy();
+    workspaceSocket!.accept();
+
+    const screenshotEventPromise = waitForMessage(workspaceSocket!);
 
     const initResponse = await SELF.fetch("http://example.com/api/screenshots/init", {
       method: "POST",
@@ -96,10 +115,10 @@ describe("workspace hub", () => {
     expect(screenshotEvent.type).toBe("screenshot.created");
     if (screenshotEvent.type === "screenshot.created") {
       expect(screenshotEvent.screenshot.id).toBe(initData.screenshotId);
-      expect(screenshotEvent.screenshot.workspaceId).toBe(pairingSession.workspaceId);
+      expect(screenshotEvent.screenshot.workspaceId).toBe(pairingComplete.workspaceId);
       expect(screenshotEvent.screenshot.status).toBe("pending");
     }
 
-    socket!.close(1000, "done");
+    workspaceSocket!.close(1000, "done");
   });
 });

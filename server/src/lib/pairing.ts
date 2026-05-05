@@ -1,10 +1,11 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type {
   PairingCompleteRequest,
   PairingCompleteResponse,
   PairingSessionCreateRequest,
   PairingSessionCreateResponse,
   PairingUpdatedEvent,
+  ViewerSessionRestoreResponse,
 } from "@screenshot-sync/contracts";
 import {
   devices,
@@ -15,38 +16,27 @@ import {
 import type { Env } from "@server/lib/env";
 import { createId, createToken, sha256 } from "@server/lib/crypto";
 import { getDb } from "@server/lib/db";
-import { publishPairingUpdated } from "@server/lib/workspace-hub";
+import { publishPairingSessionEvent, publishPairingUpdated } from "@server/lib/workspace-hub";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
-
 
 export async function createPairingSession(
   env: Env,
   request: PairingSessionCreateRequest,
-  serverUrl: string,
 ): Promise<PairingSessionCreateResponse> {
   const db = getDb(env);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + PAIRING_TTL_MS);
 
-  const workspaceId = createId("ws");
   const pairingSessionId = createId("pair");
   const viewerSessionId = createId("view");
   const pairingToken = createToken("pairtok");
   const webSessionToken = createToken("webtok");
 
   await db.batch([
-    db.insert(workspaces).values({
-      id: workspaceId,
-      name: request.clientName ?? null,
-      activeDeviceId: null,
-      createdAt: now,
-      updatedAt: now,
-      lastActivityAt: now,
-    }),
     db.insert(viewerSessions).values({
       id: viewerSessionId,
-      workspaceId,
+      workspaceId: null,
       sessionTokenHash: await sha256(webSessionToken),
       clientName: request.clientName ?? null,
       lastSeenAt: now,
@@ -56,7 +46,7 @@ export async function createPairingSession(
     }),
     db.insert(pairingSessions).values({
       id: pairingSessionId,
-      workspaceId,
+      workspaceId: null,
       pairingTokenHash: await sha256(pairingToken),
       status: "pending",
       expiresAt,
@@ -68,15 +58,12 @@ export async function createPairingSession(
   ]);
 
   return {
-    workspaceId,
     pairingSessionId,
     pairingToken,
     webSessionToken,
     expiresAt: expiresAt.toISOString(),
     qrPayload: {
       type: "screenshot-sync-pairing",
-      serverUrl,
-      workspaceId,
       pairingSessionId,
       pairingToken,
     },
@@ -94,52 +81,94 @@ export async function completePairing(
   const pairingSession = await db.query.pairingSessions.findFirst({
     where: and(
       eq(pairingSessions.id, payload.pairingSessionId),
-      eq(pairingSessions.workspaceId, payload.workspaceId),
       eq(pairingSessions.pairingTokenHash, pairingTokenHash),
       eq(pairingSessions.status, "pending"),
       gt(pairingSessions.expiresAt, now),
     ),
   });
 
-  if (!pairingSession) {
+  if (!pairingSession?.viewerSessionId) {
     throw new Error("PAIRING_SESSION_INVALID");
   }
 
-  const deviceId = createId("dev");
+  const deviceIdentityHash = await sha256(payload.device.deviceIdentity);
+  const existingDevice = await db.query.devices.findFirst({
+    where: and(eq(devices.deviceIdentityHash, deviceIdentityHash), isNull(devices.revokedAt)),
+  });
+
   const deviceToken = createToken("devtok");
   const deviceTokenHash = await sha256(deviceToken);
 
+  let workspaceId = existingDevice?.workspaceId ?? null;
+  let deviceId = existingDevice?.id ?? null;
+
+  if (!workspaceId || !deviceId) {
+    workspaceId = createId("ws");
+    deviceId = createId("dev");
+
+    await db.batch([
+      db.insert(workspaces).values({
+        id: workspaceId,
+        name: payload.device.deviceName,
+        activeDeviceId: deviceId,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      }),
+      db.insert(devices).values({
+        id: deviceId,
+        workspaceId,
+        deviceIdentityHash,
+        deviceTokenHash,
+        platform: payload.device.platform,
+        deviceName: payload.device.deviceName,
+        appVersion: payload.device.appVersion,
+        lastSeenAt: now,
+        createdAt: now,
+        revokedAt: null,
+      }),
+    ]);
+  } else {
+    await db.batch([
+      db.update(devices)
+        .set({
+          deviceTokenHash,
+          platform: payload.device.platform,
+          deviceName: payload.device.deviceName,
+          appVersion: payload.device.appVersion,
+          lastSeenAt: now,
+        })
+        .where(eq(devices.id, deviceId)),
+      db.update(workspaces)
+        .set({
+          activeDeviceId: deviceId,
+          updatedAt: now,
+          lastActivityAt: now,
+        })
+        .where(eq(workspaces.id, workspaceId)),
+    ]);
+  }
+
   await db.batch([
-    db.insert(devices).values({
-      id: deviceId,
-      workspaceId: payload.workspaceId,
-      deviceTokenHash,
-      platform: payload.device.platform,
-      deviceName: payload.device.deviceName,
-      appVersion: payload.device.appVersion,
-      lastSeenAt: now,
-      createdAt: now,
-      revokedAt: null,
-    }),
+    db.update(viewerSessions)
+      .set({
+        workspaceId,
+        lastSeenAt: now,
+      })
+      .where(eq(viewerSessions.id, pairingSession.viewerSessionId)),
     db.update(pairingSessions)
       .set({
+        workspaceId,
         status: "paired",
         pairedAt: now,
         deviceId,
       })
       .where(eq(pairingSessions.id, pairingSession.id)),
-    db.update(workspaces)
-      .set({
-        activeDeviceId: deviceId,
-        updatedAt: now,
-        lastActivityAt: now,
-      })
-      .where(eq(workspaces.id, payload.workspaceId)),
   ]);
 
   const pairingEvent: PairingUpdatedEvent = {
     type: "pairing.updated",
-    workspaceId: payload.workspaceId,
+    workspaceId,
     pairingSessionId: pairingSession.id,
     status: "paired",
     device: {
@@ -148,11 +177,43 @@ export async function completePairing(
     },
   };
 
-  await publishPairingUpdated(env, payload.workspaceId, pairingEvent);
+  await Promise.all([
+    publishPairingSessionEvent(env, pairingSession.id, pairingEvent),
+    publishPairingUpdated(env, workspaceId, pairingEvent),
+  ]);
 
   return {
-    workspaceId: payload.workspaceId,
+    workspaceId,
     deviceId,
     deviceToken,
+  };
+}
+
+export async function restoreViewerSession(
+  env: Env,
+  viewerSessionId: string,
+): Promise<ViewerSessionRestoreResponse> {
+  const db = getDb(env);
+  const now = new Date();
+  const session = await db.query.viewerSessions.findFirst({
+    where: and(
+      eq(viewerSessions.id, viewerSessionId),
+      isNull(viewerSessions.revokedAt),
+      or(isNull(viewerSessions.expiresAt), gt(viewerSessions.expiresAt, now)),
+    ),
+  });
+
+  if (!session?.workspaceId) {
+    throw new Error("VIEWER_SESSION_NOT_RESTORABLE");
+  }
+
+  await db.update(viewerSessions)
+    .set({ lastSeenAt: now })
+    .where(eq(viewerSessions.id, session.id));
+
+  return {
+    viewerSessionId: session.id,
+    workspaceId: session.workspaceId,
+    clientName: session.clientName ?? null,
   };
 }

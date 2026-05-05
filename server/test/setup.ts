@@ -15,6 +15,7 @@ const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS devices (
     id TEXT PRIMARY KEY NOT NULL,
     workspace_id TEXT NOT NULL,
+    device_identity_hash TEXT NOT NULL,
     device_token_hash TEXT NOT NULL,
     platform TEXT NOT NULL,
     device_name TEXT NOT NULL,
@@ -23,12 +24,13 @@ const schemaStatements = [
     created_at INTEGER NOT NULL,
     revoked_at INTEGER
   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS devices_identity_hash_unique ON devices(device_identity_hash)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS devices_token_hash_unique ON devices(device_token_hash)`,
   `CREATE INDEX IF NOT EXISTS devices_workspace_idx ON devices(workspace_id)`,
   `CREATE INDEX IF NOT EXISTS devices_workspace_last_seen_idx ON devices(workspace_id, last_seen_at)`,
   `CREATE TABLE IF NOT EXISTS pairing_sessions (
     id TEXT PRIMARY KEY NOT NULL,
-    workspace_id TEXT NOT NULL,
+    workspace_id TEXT,
     pairing_token_hash TEXT NOT NULL,
     status TEXT NOT NULL,
     expires_at INTEGER NOT NULL,
@@ -43,7 +45,7 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS pairing_sessions_workspace_status_idx ON pairing_sessions(workspace_id, status)`,
   `CREATE TABLE IF NOT EXISTS viewer_sessions (
     id TEXT PRIMARY KEY NOT NULL,
-    workspace_id TEXT NOT NULL,
+    workspace_id TEXT,
     session_token_hash TEXT NOT NULL,
     client_name TEXT,
     last_seen_at INTEGER NOT NULL,
