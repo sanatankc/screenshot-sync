@@ -9,6 +9,10 @@ export type ScreenshotQueueItem = {
   uri: string;
   fileName: string;
   relativePath: string | null;
+  mimeType: string | null;
+  width: number | null;
+  height: number | null;
+  capturedAt: string | null;
   detectedAt: string;
   status: QueueStatus;
   retryCount: number;
@@ -33,13 +37,17 @@ export async function enqueueScreenshotCandidate(candidate: ScreenshotCandidate)
         uri,
         file_name,
         relative_path,
+        mime_type,
+        width,
+        height,
+        captured_at,
         detected_at,
         status,
         retry_count,
         last_error,
         uploaded_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, NULL, NULL);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, NULL);
     `,
     [
       candidate.id,
@@ -47,6 +55,10 @@ export async function enqueueScreenshotCandidate(candidate: ScreenshotCandidate)
       candidate.uri,
       candidate.fileName,
       candidate.relativePath,
+      candidate.mimeType,
+      candidate.width,
+      candidate.height,
+      new Date(candidate.capturedAt).toISOString(),
       new Date(candidate.detectedAt).toISOString(),
     ]
   );
@@ -59,6 +71,10 @@ export async function listQueueItems(limit = 20): Promise<ScreenshotQueueItem[]>
     uri: string;
     file_name: string;
     relative_path: string | null;
+    mime_type: string | null;
+    width: number | null;
+    height: number | null;
+    captured_at: string | null;
     detected_at: string;
     status: QueueStatus;
     retry_count: number;
@@ -72,6 +88,10 @@ export async function listQueueItems(limit = 20): Promise<ScreenshotQueueItem[]>
         uri,
         file_name,
         relative_path,
+        mime_type,
+        width,
+        height,
+        captured_at,
         detected_at,
         status,
         retry_count,
@@ -90,6 +110,10 @@ export async function listQueueItems(limit = 20): Promise<ScreenshotQueueItem[]>
     uri: row.uri,
     fileName: row.file_name,
     relativePath: row.relative_path,
+    mimeType: row.mime_type,
+    width: row.width,
+    height: row.height,
+    capturedAt: row.captured_at,
     detectedAt: row.detected_at,
     status: row.status,
     retryCount: row.retry_count,
@@ -124,4 +148,112 @@ export async function getQueueSummary(): Promise<QueueSummary> {
     uploaded: row?.uploaded ?? 0,
     failed: row?.failed ?? 0,
   };
+}
+
+export async function listUploadableQueueItems(limit = 10): Promise<ScreenshotQueueItem[]> {
+  const rows = database.getAllSync<{
+    id: string;
+    media_store_id: string | null;
+    uri: string;
+    file_name: string;
+    relative_path: string | null;
+    mime_type: string | null;
+    width: number | null;
+    height: number | null;
+    captured_at: string | null;
+    detected_at: string;
+    status: QueueStatus;
+    retry_count: number;
+    last_error: string | null;
+    uploaded_at: string | null;
+  }>(
+    `
+      SELECT
+        id,
+        media_store_id,
+        uri,
+        file_name,
+        relative_path,
+        mime_type,
+        width,
+        height,
+        captured_at,
+        detected_at,
+        status,
+        retry_count,
+        last_error,
+        uploaded_at
+      FROM screenshot_queue
+      WHERE status = 'queued'
+         OR (status = 'failed' AND retry_count < 3)
+      ORDER BY datetime(detected_at) ASC
+      LIMIT ?;
+    `,
+    [limit]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    mediaStoreId: row.media_store_id,
+    uri: row.uri,
+    fileName: row.file_name,
+    relativePath: row.relative_path,
+    mimeType: row.mime_type,
+    width: row.width,
+    height: row.height,
+    capturedAt: row.captured_at,
+    detectedAt: row.detected_at,
+    status: row.status,
+    retryCount: row.retry_count,
+    lastError: row.last_error,
+    uploadedAt: row.uploaded_at,
+  }));
+}
+
+export async function markQueueItemUploading(id: string) {
+  database.runSync(
+    `
+      UPDATE screenshot_queue
+      SET status = 'uploading',
+          last_error = NULL
+      WHERE id = ?;
+    `,
+    [id]
+  );
+}
+
+export async function markQueueItemUploaded(id: string) {
+  database.runSync(
+    `
+      UPDATE screenshot_queue
+      SET status = 'uploaded',
+          last_error = NULL,
+          uploaded_at = ?
+      WHERE id = ?;
+    `,
+    [new Date().toISOString(), id]
+  );
+}
+
+export async function markQueueItemFailed(id: string, error: string) {
+  database.runSync(
+    `
+      UPDATE screenshot_queue
+      SET status = 'failed',
+          retry_count = retry_count + 1,
+          last_error = ?
+      WHERE id = ?;
+    `,
+    [error, id]
+  );
+}
+
+export async function resetUploadingQueueItems() {
+  database.runSync(
+    `
+      UPDATE screenshot_queue
+      SET status = 'queued'
+      WHERE status = 'uploading';
+    `
+  );
 }

@@ -16,6 +16,10 @@ export async function ensureAppStorage() {
       uri TEXT NOT NULL,
       file_name TEXT NOT NULL,
       relative_path TEXT,
+      mime_type TEXT,
+      width INTEGER,
+      height INTEGER,
+      captured_at TEXT,
       detected_at TEXT NOT NULL,
       status TEXT NOT NULL,
       retry_count INTEGER NOT NULL DEFAULT 0,
@@ -23,6 +27,11 @@ export async function ensureAppStorage() {
       uploaded_at TEXT
     );
   `);
+
+  ensureScreenshotQueueColumn("mime_type", "TEXT");
+  ensureScreenshotQueueColumn("width", "INTEGER");
+  ensureScreenshotQueueColumn("height", "INTEGER");
+  ensureScreenshotQueueColumn("captured_at", "TEXT");
 
   database.execSync(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_screenshot_queue_uri
@@ -53,6 +62,15 @@ export async function ensureAppStorage() {
       created_at TEXT NOT NULL
     );
   `);
+}
+
+function ensureScreenshotQueueColumn(columnName: string, columnDefinition: string) {
+  const existingColumns = database.getAllSync<{ name: string }>(`PRAGMA table_info(screenshot_queue);`);
+  const hasColumn = existingColumns.some((column) => column.name === columnName);
+
+  if (!hasColumn) {
+    database.execSync(`ALTER TABLE screenshot_queue ADD COLUMN ${columnName} ${columnDefinition};`);
+  }
 }
 
 export async function loadBootstrapDiagnostics(): Promise<BootstrapDiagnostics> {

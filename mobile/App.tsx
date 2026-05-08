@@ -7,9 +7,11 @@ import { ScannerPanel } from './src/components/pairing/scanner-panel';
 import { StatusBadge } from './src/components/pairing/status-badge';
 import { usePairingController } from './src/pairing/usePairingController';
 import { zenTheme } from './src/theme/zen';
+import { useUploadClient } from './src/uploads/use-upload-client';
 
 export default function App() {
   const pairing = usePairingController();
+  useUploadClient(pairing.pairedSession);
 
   return (
     <AppShell>

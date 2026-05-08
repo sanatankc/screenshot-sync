@@ -33,6 +33,7 @@
     "plugins": [
       "expo-dev-client",
       "expo-sqlite",
+      "expo-notifications",
       [
         "expo-camera",
         {
