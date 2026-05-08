@@ -4,7 +4,6 @@ import { createPairingSession, restoreViewerSession } from "@/lib/api";
 import {
   API_BASE_URL,
   toPairingWebSocketUrl,
-  toWorkspaceWebSocketUrl,
   VIEWER_SESSION_STORAGE_KEY,
 } from "@/lib/runtime";
 
@@ -16,6 +15,7 @@ type PairingFlowState = {
   connectionState: ConnectionState;
   session: PairingSessionCreateResponse | null;
   workspaceId: string | null;
+  webSessionToken: string | null;
   pairedDeviceName: string | null;
   error: string | null;
   refresh: () => void;
@@ -117,23 +117,11 @@ export function usePairingFlow(): PairingFlowState {
 
   useEffect(() => {
     const token = webSessionToken;
-    if (!token) {
+    if (!token || phase !== "waiting" || !pairingSession) {
       return;
     }
 
-    let socketUrl: string | null = null;
-
-    if (phase === "waiting" && pairingSession) {
-      socketUrl = toPairingWebSocketUrl(API_BASE_URL, pairingSession.pairingSessionId, token);
-    }
-
-    if (phase === "paired" && workspaceId) {
-      socketUrl = toWorkspaceWebSocketUrl(API_BASE_URL, workspaceId, token);
-    }
-
-    if (!socketUrl) {
-      return;
-    }
+    const socketUrl = toPairingWebSocketUrl(API_BASE_URL, pairingSession.pairingSessionId, token);
 
     socketRef.current?.close();
     const socket = new WebSocket(socketUrl);
@@ -169,16 +157,14 @@ export function usePairingFlow(): PairingFlowState {
 
     socket.addEventListener("error", () => {
       setConnectionState("error");
-      if (phase !== "paired") {
-        setPhase("error");
-        setErrorState("connection");
-      }
+      setPhase("error");
+      setErrorState("connection");
     });
 
     return () => {
       socket.close();
     };
-  }, [pairingSession, phase, webSessionToken, workspaceId]);
+  }, [pairingSession, phase, webSessionToken]);
 
   const error = useMemo(() => {
     if (errorState === "pairing") {
@@ -197,6 +183,7 @@ export function usePairingFlow(): PairingFlowState {
     connectionState,
     session: pairingSession,
     workspaceId,
+    webSessionToken,
     pairedDeviceName,
     error,
     refresh: () => {

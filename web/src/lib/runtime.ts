@@ -16,3 +16,10 @@ export function toPairingWebSocketUrl(apiBaseUrl: string, pairingSessionId: stri
   baseUrl.search = new URLSearchParams({ token: webSessionToken }).toString();
   return baseUrl.toString();
 }
+
+export function toAssetUrl(apiBaseUrl: string, storageKey: string, webSessionToken: string) {
+  const baseUrl = new URL(apiBaseUrl);
+  baseUrl.pathname = `/api/assets/${storageKey}`;
+  baseUrl.search = new URLSearchParams({ token: webSessionToken }).toString();
+  return baseUrl.toString();
+}

@@ -1,4 +1,8 @@
-import type { PairingSessionCreateResponse, ViewerSessionRestoreResponse } from "@screenshot-sync/contracts";
+import type {
+  PairingSessionCreateResponse,
+  ScreenshotListResponse,
+  ViewerSessionRestoreResponse,
+} from "@screenshot-sync/contracts";
 
 export async function createPairingSession(apiBaseUrl: string): Promise<PairingSessionCreateResponse> {
   const response = await fetch(`${apiBaseUrl}/api/pairing/session`, {
@@ -31,4 +35,22 @@ export async function restoreViewerSession(
   }
 
   return response.json() as Promise<ViewerSessionRestoreResponse>;
+}
+
+export async function listScreenshots(
+  apiBaseUrl: string,
+  webSessionToken: string,
+  limit = 100,
+): Promise<ScreenshotListResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/screenshots?limit=${limit}`, {
+    headers: {
+      authorization: `Bearer ${webSessionToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("SCREENSHOT_LIST_FAILED");
+  }
+
+  return response.json() as Promise<ScreenshotListResponse>;
 }

@@ -1,20 +1,49 @@
 import { AppFrame } from "@/components/app/app-frame";
+import { GalleryStage } from "@/components/gallery/gallery-stage";
 import { PairingStage } from "@/components/pairing/pairing-stage";
 import { usePairingFlow } from "@/hooks/use-pairing-flow";
+import { useWorkspaceGallery } from "@/hooks/use-workspace-gallery";
 
 export default function App() {
   const pairing = usePairingFlow();
+  const gallery = useWorkspaceGallery(pairing.workspaceId, pairing.webSessionToken);
+
+  const showGallery = pairing.phase === "paired" && pairing.workspaceId && pairing.webSessionToken;
+
+  if (!showGallery) {
+    return (
+      <AppFrame centered>
+        <PairingStage
+          phase={pairing.phase}
+          connectionState={pairing.connectionState}
+          session={pairing.session}
+          workspaceId={pairing.workspaceId}
+          pairedDeviceName={pairing.pairedDeviceName}
+          error={pairing.error}
+          onRefresh={pairing.refresh}
+        />
+      </AppFrame>
+    );
+  }
+
+  const workspaceId = pairing.workspaceId;
+  const webSessionToken = pairing.webSessionToken;
 
   return (
     <AppFrame>
-      <PairingStage
-        phase={pairing.phase}
-        connectionState={pairing.connectionState}
-        session={pairing.session}
-        workspaceId={pairing.workspaceId}
+      <GalleryStage
+        workspaceId={workspaceId!}
+        webSessionToken={webSessionToken!}
+        connectionState={gallery.connectionState}
+        screenshots={gallery.screenshots}
+        isLoading={gallery.isLoading}
+        isRefreshing={gallery.isRefreshing}
+        error={gallery.error}
         pairedDeviceName={pairing.pairedDeviceName}
-        error={pairing.error}
-        onRefresh={pairing.refresh}
+        onRefresh={() => {
+          void gallery.refetch();
+        }}
+        onReset={pairing.refresh}
       />
     </AppFrame>
   );

@@ -21,7 +21,7 @@ import { toScreenshotRecord } from "@server/lib/mappers";
 import { completePairing, createPairingSession, restoreViewerSession } from "@server/lib/pairing";
 import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
-import { getStorageKeyFromUploadPath, storeUpload } from "@server/lib/uploads";
+import { getStorageKeyFromAssetPath, getStorageKeyFromUploadPath, readUpload, storeUpload } from "@server/lib/uploads";
 import {
   completeOriginalUpload,
   completePreviewUpload,
@@ -144,6 +144,42 @@ app.get("/api/screenshots", viewerAuth, async (c) => {
   }
   const result = await listScreenshots(c.env, viewerSession.workspaceId, c.req.query("limit") ?? null);
   return c.json(result, 200);
+});
+
+app.get("/api/assets/*", async (c) => {
+  const storageKey = getStorageKeyFromAssetPath(new URL(c.req.url).pathname);
+  const token = c.req.query("token") ?? readBearerToken(c.req.header("authorization") ?? null);
+
+  if (!storageKey) {
+    return c.json({ ok: false, error: "ASSET_KEY_INVALID" }, 400);
+  }
+
+  try {
+    const viewerSession = await requireViewerSession(c.env, token ? `Bearer ${token}` : null);
+    const assetWorkspaceId = storageKey.split("/")[0] ?? null;
+
+    if (!viewerSession.workspaceId || !assetWorkspaceId || viewerSession.workspaceId !== assetWorkspaceId) {
+      return c.json({ ok: false, error: "ASSET_FORBIDDEN" }, 403);
+    }
+
+    const object = await readUpload(c.env, storageKey);
+    if (!object) {
+      return c.json({ ok: false, error: "ASSET_NOT_FOUND" }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag);
+    headers.set("cache-control", "private, max-age=3600");
+
+    return new Response(object.body, {
+      headers,
+      status: 200,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";
+    return c.json({ ok: false, error: message }, 401);
+  }
 });
 
 app.post("/api/screenshots/init", deviceAuth, async (c) => {
