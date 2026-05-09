@@ -3,6 +3,8 @@ package com.sanatan.screenshotsync
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.util.Log
@@ -14,6 +16,8 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 class ScreenshotBackgroundUploader(
   private val context: Context,
@@ -76,21 +80,23 @@ class ScreenshotBackgroundUploader(
     queueStore.markUploading(item.id)
     Log.d(TAG, "processQueueItem:mark_uploading id=${item.id}")
 
-    val mimeType = item.mimeType ?: guessMimeType(item.fileName)
-    val screenshotBytes = readScreenshotBytes(item.uri)
-    Log.d(TAG, "processQueueItem:file_ready id=${item.id} mimeType=$mimeType size=${screenshotBytes.size}")
-    val initResponse = initRemoteScreenshot(session, item, mimeType, screenshotBytes.size)
+    val preparedImage = prepareImageAssets(item)
+    Log.d(
+      TAG,
+      "processQueueItem:file_ready id=${item.id} originalMimeType=${preparedImage.originalMimeType} originalSize=${preparedImage.originalBytes.size} width=${preparedImage.width} height=${preparedImage.height} previewMimeType=${preparedImage.preview.mimeType} previewSize=${preparedImage.preview.bytes.size} previewWidth=${preparedImage.preview.width} previewHeight=${preparedImage.preview.height}",
+    )
+    val initResponse = initRemoteScreenshot(session, item, preparedImage)
     Log.d(TAG, "processQueueItem:init_complete id=${item.id} screenshotId=${initResponse.screenshotId}")
 
     try {
-      uploadBytes(initResponse.previewUrl, mimeType, screenshotBytes)
+      uploadBytes(initResponse.previewUrl, preparedImage.preview.mimeType, preparedImage.preview.bytes)
       Log.d(TAG, "processQueueItem:preview_uploaded id=${item.id} screenshotId=${initResponse.screenshotId}")
-      completePreviewUpload(session, initResponse.screenshotId, item, mimeType, screenshotBytes.size, initResponse.previewUrl)
+      completePreviewUpload(session, initResponse.screenshotId, preparedImage.preview, initResponse.previewUrl)
       Log.d(TAG, "processQueueItem:preview_complete id=${item.id} screenshotId=${initResponse.screenshotId}")
 
-      uploadBytes(initResponse.originalUrl, mimeType, screenshotBytes)
+      uploadBytes(initResponse.originalUrl, preparedImage.originalMimeType, preparedImage.originalBytes)
       Log.d(TAG, "processQueueItem:original_uploaded id=${item.id} screenshotId=${initResponse.screenshotId}")
-      completeOriginalUpload(session, initResponse.screenshotId, mimeType, screenshotBytes.size, initResponse.originalUrl)
+      completeOriginalUpload(session, initResponse.screenshotId, preparedImage.originalMimeType, preparedImage.originalBytes.size, initResponse.originalUrl)
       Log.d(TAG, "processQueueItem:original_complete id=${item.id} screenshotId=${initResponse.screenshotId}")
 
       queueStore.markUploaded(item.id)
@@ -108,18 +114,17 @@ class ScreenshotBackgroundUploader(
   private fun initRemoteScreenshot(
     session: PairedDeviceSessionRecord,
     item: QueuedScreenshotRecord,
-    mimeType: String,
-    fileSizeBytes: Int,
+    preparedImage: PreparedImageAssets,
   ): NativeInitResponse {
     Log.d(TAG, "initRemoteScreenshot:request id=${item.id}")
     val payload = JSONObject().apply {
       put("clientGeneratedId", item.id)
       put("capturedAt", item.capturedAt ?: item.detectedAt)
       put("detectedAt", item.detectedAt)
-      put("width", item.width ?: 0)
-      put("height", item.height ?: 0)
-      put("mimeType", mimeType)
-      put("fileSizeBytes", fileSizeBytes)
+      put("width", preparedImage.width)
+      put("height", preparedImage.height)
+      put("mimeType", preparedImage.originalMimeType)
+      put("fileSizeBytes", preparedImage.originalBytes.size)
     }
 
     val responseBody = executeJsonRequest(
@@ -142,18 +147,16 @@ class ScreenshotBackgroundUploader(
   private fun completePreviewUpload(
     session: PairedDeviceSessionRecord,
     screenshotId: String,
-    item: QueuedScreenshotRecord,
-    mimeType: String,
-    fileSizeBytes: Int,
+    preview: PreviewImageAsset,
     uploadUrl: String,
   ) {
     Log.d(TAG, "completePreviewUpload:request screenshotId=$screenshotId")
     val payload = JSONObject().apply {
       put("storageKey", extractStorageKey(uploadUrl))
-      put("mimeType", mimeType)
-      put("sizeBytes", fileSizeBytes)
-      put("width", item.width ?: 0)
-      put("height", item.height ?: 0)
+      put("mimeType", preview.mimeType)
+      put("sizeBytes", preview.bytes.size)
+      put("width", preview.width)
+      put("height", preview.height)
       put("blurhash", JSONObject.NULL)
     }
 
@@ -311,6 +314,93 @@ class ScreenshotBackgroundUploader(
     }
   }
 
+  private fun prepareImageAssets(item: QueuedScreenshotRecord): PreparedImageAssets {
+    val originalMimeType = item.mimeType ?: guessMimeType(item.fileName)
+    val originalBytes = readScreenshotBytes(item.uri)
+    val decodedDimensions = readImageDimensions(originalBytes)
+    val originalWidth = item.width?.takeIf { it > 0 } ?: decodedDimensions.first
+    val originalHeight = item.height?.takeIf { it > 0 } ?: decodedDimensions.second
+
+    val preview = createPreviewAsset(originalBytes, originalWidth, originalHeight)
+      ?: PreviewImageAsset(
+        bytes = originalBytes,
+        mimeType = originalMimeType,
+        width = originalWidth,
+        height = originalHeight,
+      )
+
+    return PreparedImageAssets(
+      originalBytes = originalBytes,
+      originalMimeType = originalMimeType,
+      width = originalWidth,
+      height = originalHeight,
+      preview = preview,
+    )
+  }
+
+  private fun readImageDimensions(bytes: ByteArray): Pair<Int, Int> {
+    val options = BitmapFactory.Options().apply {
+      inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    return Pair(max(options.outWidth, 0), max(options.outHeight, 0))
+  }
+
+  private fun createPreviewAsset(
+    originalBytes: ByteArray,
+    originalWidth: Int,
+    originalHeight: Int,
+  ): PreviewImageAsset? {
+    if (originalWidth <= 0 || originalHeight <= 0) {
+      Log.w(TAG, "createPreviewAsset:missing_dimensions")
+      return null
+    }
+
+    val bitmap = BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.size)
+      ?: run {
+        Log.w(TAG, "createPreviewAsset:decode_failed")
+        return null
+      }
+
+    val longestEdge = max(bitmap.width, bitmap.height)
+    val previewMaxEdge = 720
+    val scale = if (longestEdge <= previewMaxEdge) {
+      1.0f
+    } else {
+      previewMaxEdge.toFloat() / longestEdge.toFloat()
+    }
+
+    val previewWidth = max((bitmap.width * scale).roundToInt(), 1)
+    val previewHeight = max((bitmap.height * scale).roundToInt(), 1)
+
+    val scaledBitmap = if (previewWidth == bitmap.width && previewHeight == bitmap.height) {
+      bitmap
+    } else {
+      Bitmap.createScaledBitmap(bitmap, previewWidth, previewHeight, true)
+    }
+
+    return try {
+      val output = ByteArrayOutputStream()
+      val compressed = scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 72, output)
+      if (!compressed) {
+        Log.w(TAG, "createPreviewAsset:compress_failed")
+        null
+      } else {
+        PreviewImageAsset(
+          bytes = output.toByteArray(),
+          mimeType = "image/jpeg",
+          width = previewWidth,
+          height = previewHeight,
+        )
+      }
+    } finally {
+      if (scaledBitmap !== bitmap) {
+        scaledBitmap.recycle()
+      }
+      bitmap.recycle()
+    }
+  }
+
   private fun normalizeBaseUrl(serverUrl: String): String {
     return serverUrl.removeSuffix("/")
   }
@@ -388,4 +478,19 @@ private data class NativeInitResponse(
   val screenshotId: String,
   val previewUrl: String,
   val originalUrl: String,
+)
+
+private data class PreparedImageAssets(
+  val originalBytes: ByteArray,
+  val originalMimeType: String,
+  val width: Int,
+  val height: Int,
+  val preview: PreviewImageAsset,
+)
+
+private data class PreviewImageAsset(
+  val bytes: ByteArray,
+  val mimeType: String,
+  val width: Int,
+  val height: Int,
 )
