@@ -363,7 +363,7 @@ class ScreenshotBackgroundUploader(
       }
 
     val longestEdge = max(bitmap.width, bitmap.height)
-    val previewMaxEdge = 720
+    val previewMaxEdge = 320
     val scale = if (longestEdge <= previewMaxEdge) {
       1.0f
     } else {
@@ -381,7 +381,7 @@ class ScreenshotBackgroundUploader(
 
     return try {
       val output = ByteArrayOutputStream()
-      val compressed = scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 72, output)
+      val compressed = scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 40, output)
       if (!compressed) {
         Log.w(TAG, "createPreviewAsset:compress_failed")
         null

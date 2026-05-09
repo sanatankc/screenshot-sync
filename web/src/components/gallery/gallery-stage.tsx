@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ImageIcon, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import type { ScreenshotRecord } from "@screenshot-sync/contracts";
 import { Badge } from "@/components/ui/badge";
@@ -37,8 +38,7 @@ function formatTimestamp(value: string) {
   }).format(date);
 }
 
-function resolveImageUrl(screenshot: ScreenshotRecord, webSessionToken: string) {
-  const storageKey = screenshot.previewStorageKey ?? screenshot.originalStorageKey;
+function resolveAssetUrl(storageKey: string | null, webSessionToken: string) {
   if (!storageKey) {
     return null;
   }
@@ -47,20 +47,60 @@ function resolveImageUrl(screenshot: ScreenshotRecord, webSessionToken: string) 
 }
 
 function ScreenshotCard({ screenshot, webSessionToken }: { screenshot: ScreenshotRecord; webSessionToken: string }) {
-  const imageUrl = resolveImageUrl(screenshot, webSessionToken);
+  const previewUrl = resolveAssetUrl(screenshot.previewStorageKey, webSessionToken);
+  const originalUrl = resolveAssetUrl(screenshot.originalStorageKey, webSessionToken);
   const aspectRatio = screenshot.width && screenshot.height ? `${screenshot.width} / ${screenshot.height}` : undefined;
+  const [originalLoaded, setOriginalLoaded] = useState(false);
+
+  useEffect(() => {
+    setOriginalLoaded(false);
+  }, [originalUrl]);
+
+  const shouldShowOriginal = screenshot.status === "ready" && Boolean(originalUrl);
+  const fallbackUrl = previewUrl ?? originalUrl;
 
   return (
     <article className="group animate-in fade-in zoom-in-95 duration-300">
       <Card className="overflow-hidden border-border/70 bg-card/92 shadow-xl shadow-black/10 transition-transform duration-300 group-hover:-translate-y-1">
         <div className="relative border-b border-border/60 bg-background/70" style={aspectRatio ? { aspectRatio } : { aspectRatio: "9 / 16" }}>
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={`Screenshot ${screenshot.id}`}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
+          {fallbackUrl ? (
+            <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--color-primary)_14%,transparent),transparent_46%)]">
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt=""
+                  aria-hidden="true"
+                  className={`absolute inset-0 h-full w-full scale-[1.04] object-cover transition-all duration-700 ${
+                    shouldShowOriginal
+                      ? originalLoaded
+                        ? "opacity-0 blur-none"
+                        : "opacity-100 blur-xl saturate-75"
+                      : "opacity-100 blur-md saturate-90"
+                  }`}
+                  loading="lazy"
+                />
+              ) : null}
+
+              {(shouldShowOriginal ? originalUrl : !previewUrl ? originalUrl : null) ? (
+                <img
+                  src={shouldShowOriginal ? originalUrl! : originalUrl!}
+                  alt={`Screenshot ${screenshot.id}`}
+                  className={`absolute inset-0 h-full w-full object-cover transition-all duration-700 ${
+                    shouldShowOriginal
+                      ? originalLoaded
+                        ? "opacity-100 scale-100"
+                        : "opacity-0 scale-[1.015]"
+                      : "opacity-100"
+                  }`}
+                  loading="lazy"
+                  onLoad={() => {
+                    if (shouldShowOriginal) {
+                      setOriginalLoaded(true);
+                    }
+                  }}
+                />
+              ) : null}
+            </div>
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--color-primary)_14%,transparent),transparent_46%)]">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
