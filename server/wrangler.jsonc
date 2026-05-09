@@ -50,8 +50,7 @@
     "production": {
       "name": "capture-server-production",
       "vars": {
-        // Replace with your deployed Vercel domain(s) before first production deploy.
-        "ALLOWED_ORIGINS": "*"
+        "ALLOWED_ORIGINS": "https://capture-shot.vercel.app"
       },
       "d1_databases": [
         {
