@@ -43,6 +43,10 @@ function getAllowedOrigins(env: Env) {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+  if (configuredOrigins?.includes("*")) {
+    return new Set(["*"]);
+  }
+
   return new Set(
     configuredOrigins && configuredOrigins.length > 0
       ? [...DEFAULT_ALLOWED_ORIGINS, ...configuredOrigins]
@@ -57,6 +61,10 @@ app.use(
       if (!origin) return origin;
 
       const allowedOrigins = getAllowedOrigins(c.env);
+
+      if (allowedOrigins.has("*")) {
+        return origin;
+      }
 
       return allowedOrigins.has(origin) ? origin : null;
     },
@@ -101,7 +109,7 @@ const exampleTransportScreenshot: ScreenshotRecord = toScreenshotRecord(exampleS
 app.get("/health", (c) => {
   return c.json({
     ok: true,
-    service: "screenshot-sync-server",
+    service: "capture-server",
     capabilities: {
       workers: true,
       durableObjects: true,

@@ -41,7 +41,7 @@ Update [`server/wrangler.jsonc`](/Users/sanatan/Desktop/hot-things/screenshot-sy
 
 - replace `replace-with-production-d1-id`
 - replace `ALLOWED_ORIGINS` with your real Vercel domain(s)
-  - example: `https://screenshot-sync.vercel.app`
+  - example: `https://capture.vercel.app`
   - if needed, comma-separate multiple origins
 
 ## 4. Set migration credentials for Drizzle / remote D1 access

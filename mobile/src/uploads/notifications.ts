@@ -37,7 +37,7 @@ export async function notifyUploadBatchStarted(count: number) {
   await Notifications.scheduleNotificationAsync({
     content: {
       title: count === 1 ? 'Uploading screenshot' : `Uploading ${count} screenshots`,
-      body: 'Screenshot Sync is sending new captures in the background.',
+      body: 'Capture is sending new captures in the background.',
       sound: false,
     },
     trigger: null,

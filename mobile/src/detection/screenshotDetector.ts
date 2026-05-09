@@ -69,7 +69,7 @@ export async function ensureScreenshotPermission() {
 
   const result = await PermissionsAndroid.request(permission, {
     title: "Allow screenshot access",
-    message: "Screenshot Sync needs image access to detect new screenshots on your device.",
+    message: "Capture needs image access to detect new screenshots on your device.",
     buttonPositive: "Allow",
     buttonNegative: "Not now",
   });

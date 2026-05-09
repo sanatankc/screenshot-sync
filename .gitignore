@@ -12,3 +12,4 @@ mobile/android/app/debug.keystore
 web/dist
 server/.wrangler
 server/migrations
+.vercel

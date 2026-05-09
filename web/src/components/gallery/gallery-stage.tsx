@@ -126,7 +126,7 @@ export function GalleryStage({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-4">
           <div className="text-[11px] font-medium uppercase tracking-[0.32em] text-muted-foreground">
-            Screenshot Sync
+            Capture
           </div>
           <div className="space-y-2">
             <h1 className="font-serif text-5xl tracking-tight text-foreground sm:text-6xl">

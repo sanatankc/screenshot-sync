@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Screenshot Sync",
-    "slug": "screenshot-sync-mobile",
+    "name": "Capture",
+    "slug": "capture-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Screenshot Sync uses your camera to scan pairing codes."
+          "cameraPermission": "Capture uses your camera to scan pairing codes."
         }
       ]
     ],

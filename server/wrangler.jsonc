@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "screenshot-sync-server",
+  "name": "capture-server",
   "main": "src/index.ts",
   "compatibility_date": "2025-09-06",
   "vars": {
@@ -44,25 +44,20 @@
         "binding": "RETENTION_CLEANUP_QUEUE",
         "queue": "screenshot-sync-retention"
       }
-    ],
-    "consumers": [
-      {
-        "queue": "screenshot-sync-retention"
-      }
     ]
   },
   "env": {
     "production": {
-      "name": "screenshot-sync-server-production",
+      "name": "capture-server-production",
       "vars": {
         // Replace with your deployed Vercel domain(s) before first production deploy.
-        "ALLOWED_ORIGINS": "https://your-project.vercel.app"
+        "ALLOWED_ORIGINS": "*"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "screenshot-sync-db-production",
-          "database_id": "replace-with-production-d1-id"
+          "database_id": "87373a38-4aab-4b4a-ae0b-47655763a763"
         }
       ],
       "r2_buckets": [
@@ -83,11 +78,6 @@
         "producers": [
           {
             "binding": "RETENTION_CLEANUP_QUEUE",
-            "queue": "screenshot-sync-retention-production"
-          }
-        ],
-        "consumers": [
-          {
             "queue": "screenshot-sync-retention-production"
           }
         ]
