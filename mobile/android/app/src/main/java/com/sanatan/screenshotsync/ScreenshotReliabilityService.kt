@@ -12,12 +12,14 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class ScreenshotReliabilityService : Service() {
   companion object {
+    private const val TAG = "ScreenshotService"
     private const val NOTIFICATION_CHANNEL_ID = "screenshot-sync-reliability"
     private const val NOTIFICATION_ID = 3107
     private const val ACTION_START = "com.sanatan.screenshotsync.action.START_RELIABILITY"
@@ -30,6 +32,7 @@ class ScreenshotReliabilityService : Service() {
     private var serviceRunning = false
 
     fun start(context: Context) {
+      Log.d(TAG, "companion.start")
       val intent = Intent(context, ScreenshotReliabilityService::class.java).apply {
         action = ACTION_START
       }
@@ -37,6 +40,7 @@ class ScreenshotReliabilityService : Service() {
     }
 
     fun stop(context: Context) {
+      Log.d(TAG, "companion.stop")
       val intent = Intent(context, ScreenshotReliabilityService::class.java).apply {
         action = ACTION_STOP
       }
@@ -65,6 +69,7 @@ class ScreenshotReliabilityService : Service() {
   private val mainHandler = Handler(Looper.getMainLooper())
   private lateinit var scanner: ScreenshotScanner
   private lateinit var queueStore: ScreenshotQueueStore
+  private lateinit var uploader: ScreenshotBackgroundUploader
   private lateinit var executor: ExecutorService
   private var observer: ContentObserver? = null
   private var isRunning = false
@@ -80,8 +85,10 @@ class ScreenshotReliabilityService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    Log.d(TAG, "onCreate")
     scanner = ScreenshotScanner(this)
     queueStore = ScreenshotQueueStore(this)
+    uploader = ScreenshotBackgroundUploader(this, queueStore)
     executor = Executors.newSingleThreadExecutor()
     createNotificationChannel()
   }
@@ -89,6 +96,7 @@ class ScreenshotReliabilityService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    Log.d(TAG, "onStartCommand action=${intent?.action} startId=$startId flags=$flags")
     when (intent?.action) {
       ACTION_STOP -> {
         stopReliabilityMode()
@@ -101,6 +109,7 @@ class ScreenshotReliabilityService : Service() {
   }
 
   override fun onDestroy() {
+    Log.d(TAG, "onDestroy")
     serviceRunning = false
     teardownObservers()
     executor.shutdownNow()
@@ -109,20 +118,28 @@ class ScreenshotReliabilityService : Service() {
 
   private fun startReliabilityMode() {
     if (isRunning) {
+      Log.d(TAG, "startReliabilityMode:already_running")
       return
     }
 
+    Log.d(TAG, "startReliabilityMode:starting")
     setEnabled(this, true)
     startForeground(NOTIFICATION_ID, createNotification())
+    queueStore.resetUploadingItems()
     registerObserver()
     isRunning = true
     serviceRunning = true
     runLiveScan()
+    executor.execute {
+      Log.d(TAG, "startReliabilityMode:initial_drain")
+      uploader.drainQueue()
+    }
     mainHandler.removeCallbacks(reconciliationRunnable)
     mainHandler.postDelayed(reconciliationRunnable, RECONCILIATION_INTERVAL_MS)
   }
 
   private fun stopReliabilityMode() {
+    Log.d(TAG, "stopReliabilityMode")
     setEnabled(this, false)
     isRunning = false
     serviceRunning = false
@@ -134,12 +151,14 @@ class ScreenshotReliabilityService : Service() {
 
   private fun registerObserver() {
     if (observer != null) {
+      Log.d(TAG, "registerObserver:already_registered")
       return
     }
 
     observer = object : ContentObserver(mainHandler) {
       override fun onChange(selfChange: Boolean) {
         super.onChange(selfChange)
+        Log.d(TAG, "contentObserver:onChange selfChange=$selfChange")
         runLiveScan()
       }
     }
@@ -149,31 +168,46 @@ class ScreenshotReliabilityService : Service() {
       true,
       observer as ContentObserver,
     )
+    Log.d(TAG, "registerObserver:registered")
   }
 
   private fun teardownObservers() {
+    Log.d(TAG, "teardownObservers")
     observer?.let { contentResolver.unregisterContentObserver(it) }
     observer = null
     mainHandler.removeCallbacks(reconciliationRunnable)
   }
 
   private fun runLiveScan() {
+    Log.d(TAG, "runLiveScan:scheduled")
     executor.execute {
-      persistCandidates(scanner.scanRecentScreenshots())
+      val candidates = scanner.scanRecentScreenshots()
+      Log.d(TAG, "runLiveScan:candidates=${candidates.size}")
+      persistCandidates(candidates)
+      Log.d(TAG, "runLiveScan:drain_queue")
+      uploader.drainQueue()
     }
   }
 
   private fun runReconciliationScan() {
+    Log.d(TAG, "runReconciliationScan:scheduled")
     executor.execute {
-      persistCandidates(scanner.reconcileRecentScreenshots())
+      val candidates = scanner.reconcileRecentScreenshots()
+      Log.d(TAG, "runReconciliationScan:candidates=${candidates.size}")
+      persistCandidates(candidates)
+      Log.d(TAG, "runReconciliationScan:drain_queue")
+      uploader.drainQueue()
     }
   }
 
   private fun persistCandidates(candidates: List<ScreenshotCandidateRecord>) {
+    Log.d(TAG, "persistCandidates:start count=${candidates.size}")
     candidates.forEach { candidate ->
-      queueStore.enqueueCandidate(candidate)
+      val inserted = queueStore.enqueueCandidate(candidate)
+      Log.d(TAG, "persistCandidates:item id=${candidate.id} inserted=$inserted uri=${candidate.uri}")
     }
     setLastScanAt(this, System.currentTimeMillis())
+    Log.d(TAG, "persistCandidates:done")
   }
 
   private fun createNotificationChannel() {

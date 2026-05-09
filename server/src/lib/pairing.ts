@@ -19,6 +19,7 @@ import { getDb } from "@server/lib/db";
 import { publishPairingSessionEvent, publishPairingUpdated } from "@server/lib/workspace-hub";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
+const VIEWER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function createPairingSession(
   env: Env,
@@ -26,7 +27,8 @@ export async function createPairingSession(
 ): Promise<PairingSessionCreateResponse> {
   const db = getDb(env);
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + PAIRING_TTL_MS);
+  const pairingExpiresAt = new Date(now.getTime() + PAIRING_TTL_MS);
+  const viewerSessionExpiresAt = new Date(now.getTime() + VIEWER_SESSION_TTL_MS);
 
   const pairingSessionId = createId("pair");
   const viewerSessionId = createId("view");
@@ -41,7 +43,7 @@ export async function createPairingSession(
       clientName: request.clientName ?? null,
       lastSeenAt: now,
       createdAt: now,
-      expiresAt,
+      expiresAt: viewerSessionExpiresAt,
       revokedAt: null,
     }),
     db.insert(pairingSessions).values({
@@ -49,7 +51,7 @@ export async function createPairingSession(
       workspaceId: null,
       pairingTokenHash: await sha256(pairingToken),
       status: "pending",
-      expiresAt,
+      expiresAt: pairingExpiresAt,
       createdAt: now,
       pairedAt: null,
       viewerSessionId,
@@ -61,7 +63,7 @@ export async function createPairingSession(
     pairingSessionId,
     pairingToken,
     webSessionToken,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: pairingExpiresAt.toISOString(),
     qrPayload: {
       type: "screenshot-sync-pairing",
       pairingSessionId,
@@ -195,6 +197,7 @@ export async function restoreViewerSession(
 ): Promise<ViewerSessionRestoreResponse> {
   const db = getDb(env);
   const now = new Date();
+  const viewerSessionExpiresAt = new Date(now.getTime() + VIEWER_SESSION_TTL_MS);
   const session = await db.query.viewerSessions.findFirst({
     where: and(
       eq(viewerSessions.id, viewerSessionId),
@@ -208,7 +211,10 @@ export async function restoreViewerSession(
   }
 
   await db.update(viewerSessions)
-    .set({ lastSeenAt: now })
+    .set({
+      lastSeenAt: now,
+      expiresAt: viewerSessionExpiresAt,
+    })
     .where(eq(viewerSessions.id, session.id));
 
   return {

@@ -1,4 +1,5 @@
 import { database } from '../storage/bootstrap';
+import { clearNativePairedSession, syncNativePairedSession } from '../detection/screenshotDetector';
 
 export type PairedDeviceSession = {
   workspaceId: string;
@@ -56,10 +57,13 @@ export async function savePairedDeviceSession(session: PairedDeviceSession) {
     `,
     [session.workspaceId, session.deviceId, session.deviceToken, session.serverUrl, session.connectedAt],
   );
+
+  await syncNativePairedSession(session).catch(() => undefined);
 }
 
 export async function clearPairedDeviceSession() {
   database.runSync('DELETE FROM paired_device_session WHERE id = 1;');
+  await clearNativePairedSession().catch(() => undefined);
 }
 
 export async function loadDeviceIdentity(): Promise<DeviceIdentity | null> {

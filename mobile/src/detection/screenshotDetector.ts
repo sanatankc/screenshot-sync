@@ -35,6 +35,14 @@ type NativeScreenshotDetectorModule = {
   startReliabilityMode(): Promise<ReliabilityModeStatus>;
   stopReliabilityMode(): Promise<ReliabilityModeStatus>;
   getReliabilityStatus(): Promise<ReliabilityModeStatus>;
+  syncPairedSession(session: {
+    workspaceId: string;
+    deviceId: string;
+    deviceToken: string;
+    serverUrl: string;
+    connectedAt: string;
+  }): Promise<void>;
+  clearPairedSession(): Promise<void>;
 };
 
 const detectorModule = NativeModules.ScreenshotDetector as NativeScreenshotDetectorModule | undefined;
@@ -121,6 +129,28 @@ export async function stopReliabilityMode() {
     throw new Error("Screenshot detector is unavailable on this platform");
   }
   return detectorModule.stopReliabilityMode();
+}
+
+export async function syncNativePairedSession(session: {
+  workspaceId: string;
+  deviceId: string;
+  deviceToken: string;
+  serverUrl: string;
+  connectedAt: string;
+}) {
+  if (!detectorModule) {
+    return;
+  }
+
+  return detectorModule.syncPairedSession(session);
+}
+
+export async function clearNativePairedSession() {
+  if (!detectorModule) {
+    return;
+  }
+
+  return detectorModule.clearPairedSession();
 }
 
 export function subscribeToScreenshotDetections(listener: (candidate: ScreenshotCandidate) => void) {

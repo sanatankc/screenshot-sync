@@ -49,6 +49,7 @@ describe("pairing routes", () => {
     expect(pairingSession?.workspaceId).toBeNull();
     expect(viewerSession?.workspaceId).toBeNull();
     expect(viewerSession?.clientName).toBe("Sanatan Chrome");
+    expect(viewerSession?.expiresAt?.getTime()).toBeGreaterThan(pairingSession!.expiresAt!.getTime());
     expect(allWorkspaces).toHaveLength(0);
   });
 
@@ -152,6 +153,13 @@ describe("pairing routes", () => {
     });
     const created = await createResponse.json<PairingSessionCreateResponse>();
 
+    const pairingSessionBeforeRestore = await db.query.pairingSessions.findFirst({
+      where: eq(pairingSessions.id, created.pairingSessionId),
+    });
+    const viewerSessionBeforeRestore = await db.query.viewerSessions.findFirst({
+      where: eq(viewerSessions.id, pairingSessionBeforeRestore!.viewerSessionId!),
+    });
+
     await SELF.fetch("http://example.com/api/pairing/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -173,6 +181,14 @@ describe("pairing routes", () => {
     expect(restored.viewerSessionId).toMatch(/^view_/);
     expect(restored.workspaceId).toMatch(/^ws_/);
     expect(restored.clientName).toBe("MacBook Chrome");
+
+    const viewerSessionAfterRestore = await db.query.viewerSessions.findFirst({
+      where: eq(viewerSessions.id, restored.viewerSessionId),
+    });
+
+    expect(viewerSessionAfterRestore?.expiresAt?.getTime()).toBeGreaterThan(
+      viewerSessionBeforeRestore!.expiresAt!.getTime(),
+    );
   });
 
   it("stores the pairing event in both the pairing-session hub and the workspace hub", async () => {
