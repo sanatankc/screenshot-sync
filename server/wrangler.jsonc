@@ -3,6 +3,9 @@
   "name": "screenshot-sync-server",
   "main": "src/index.ts",
   "compatibility_date": "2025-09-06",
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:3001,http://127.0.0.1:3001"
+  },
   "observability": {
     "enabled": true
   },
@@ -47,5 +50,48 @@
         "queue": "screenshot-sync-retention"
       }
     ]
+  },
+  "env": {
+    "production": {
+      "name": "screenshot-sync-server-production",
+      "vars": {
+        // Replace with your deployed Vercel domain(s) before first production deploy.
+        "ALLOWED_ORIGINS": "https://your-project.vercel.app"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "screenshot-sync-db-production",
+          "database_id": "replace-with-production-d1-id"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "SCREENSHOT_ASSETS",
+          "bucket_name": "screenshot-sync-assets-production"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "WORKSPACE_HUB",
+            "class_name": "WorkspaceHub"
+          }
+        ]
+      },
+      "queues": {
+        "producers": [
+          {
+            "binding": "RETENTION_CLEANUP_QUEUE",
+            "queue": "screenshot-sync-retention-production"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "screenshot-sync-retention-production"
+          }
+        ]
+      }
+    }
   }
 }

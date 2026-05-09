@@ -32,16 +32,31 @@ import {
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+];
+
+function getAllowedOrigins(env: Env) {
+  const configuredOrigins = env.ALLOWED_ORIGINS
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return new Set(
+    configuredOrigins && configuredOrigins.length > 0
+      ? [...DEFAULT_ALLOWED_ORIGINS, ...configuredOrigins]
+      : DEFAULT_ALLOWED_ORIGINS,
+  );
+}
+
 app.use(
   "*",
   cors({
-    origin: (origin) => {
+    origin: (origin, c) => {
       if (!origin) return origin;
 
-      const allowedOrigins = new Set([
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-      ]);
+      const allowedOrigins = getAllowedOrigins(c.env);
 
       return allowedOrigins.has(origin) ? origin : null;
     },

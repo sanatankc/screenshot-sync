@@ -3,4 +3,5 @@ export type Env = {
   SCREENSHOT_ASSETS: R2Bucket;
   RETENTION_CLEANUP_QUEUE: Queue;
   WORKSPACE_HUB: DurableObjectNamespace;
+  ALLOWED_ORIGINS?: string;
 };
