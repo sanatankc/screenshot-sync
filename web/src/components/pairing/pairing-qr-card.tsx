@@ -18,17 +18,19 @@ type PairingQrCardProps = {
 
 export function PairingQrCard({
   qrValue,
-  workspaceId,
+  // workspaceId,
   pairingSessionId,
   statusLabel,
   message,
-  isReady,
+  // isReady,
   onRefresh,
 }: PairingQrCardProps) {
   const [colors, setColors] = useState({
     background: "#ece6d8",
     foreground: "#2c2a27",
   });
+  let isReady = false;
+  let workspaceId: string | null = null;
 
   useEffect(() => {
     const styles = getComputedStyle(document.documentElement);
@@ -87,11 +89,7 @@ export function PairingQrCard({
               {workspaceId ? "Workspace" : "Session"}
             </span>
             <span className="truncate font-mono text-sm text-foreground">
-              {workspaceId
-                ? workspaceId.slice(0, 8)
-                : pairingSessionId
-                  ? pairingSessionId.slice(0, 10)
-                  : "--------"}
+              {workspaceId ?? pairingSessionId?.slice(0, 10) ?? "--------"}
             </span>
           </div>
           <Button variant="secondary" size="sm" className="rounded-full" onClick={onRefresh}>

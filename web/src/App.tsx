@@ -12,7 +12,7 @@ export default function App() {
 
   if (!showGallery) {
     return (
-      <AppFrame centered>
+      <AppFrame>
         <PairingStage
           phase={pairing.phase}
           connectionState={pairing.connectionState}
