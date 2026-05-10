@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -39,7 +40,9 @@
   --sidebar-ring: oklch(0.8520 0.0205 100.6306);
   --font-sans: "Inter", sans-serif;
   --font-serif: "Playfair Display", serif;
+  --font-brand: "Sora", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+  --font-brand: "Sora", sans-serif;
   --shadow-color: #000000;
   --shadow-opacity: 0.3;
   --shadow-blur: 15px;
@@ -89,7 +92,9 @@
   --color-ring: var(--ring);
   --font-sans: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+  --font-brand: "Sora", sans-serif;
   --font-serif: "Playfair Display", serif;
+  --font-brand: "Sora", sans-serif;
   --radius: 0.5rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);

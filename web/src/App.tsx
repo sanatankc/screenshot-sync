@@ -1,5 +1,5 @@
 import { AppFrame } from "@/components/app/app-frame";
-import { GalleryStage } from "@/components/gallery/gallery-stage";
+import { GalleryStage } from "@/components/gallery";
 import { PairingStage } from "@/components/pairing/pairing-stage";
 import { usePairingFlow } from "@/hooks/use-pairing-flow";
 import { useWorkspaceGallery } from "@/hooks/use-workspace-gallery";
