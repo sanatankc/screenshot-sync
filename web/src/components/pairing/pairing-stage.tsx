@@ -16,6 +16,8 @@ type PairingStageProps = {
   workspaceId: string | null;
   pairedDeviceName: string | null;
   error: string | null;
+  clientName: string;
+  onClientNameChange: (value: string) => void;
   onRefresh: () => void;
 };
 
@@ -31,6 +33,8 @@ export function PairingStage({
   workspaceId,
   pairedDeviceName,
   error,
+  clientName,
+  onClientNameChange,
   onRefresh,
 }: PairingStageProps) {
   const qrValue = session ? JSON.stringify(session.qrPayload) : null;
@@ -43,13 +47,6 @@ export function PairingStage({
     setColors({ background, foreground });
   }, []);
 
-  const statusLine = error
-    ? error
-    : phase === "paired"
-      ? pairedDeviceName ?? "Phone connected"
-      : connectionState === "open"
-        ? "Waiting for scan"
-        : "Preparing secure pairing";
 
   return (
     <section className="relative flex min-h-screen w-full items-center overflow-hidden bg-background text-foreground">
@@ -123,19 +120,25 @@ export function PairingStage({
                 </div>
               </div>
 
-              <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/[0.07] pt-4">
-                <p
+              <div className="mt-5 flex items-center gap-3 border-t border-white/[0.07] pt-4">
+                <label className="sr-only" htmlFor="pairing-client-name">Viewer name</label>
+                <input
+                  id="pairing-client-name"
+                  type="text"
+                  value={clientName}
+                  onChange={(event) => onClientNameChange(event.target.value)}
+                  placeholder="Viewer name"
                   className={cn(
-                    "text-sm text-muted-foreground transition-colors",
-                    error && "text-red-200/85",
+                    "h-10 min-w-0 flex-1 rounded-full border border-white/[0.08] bg-white/[0.02] px-4 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-white/[0.16] focus:bg-white/[0.04]",
+                    error && "border-red-300/20"
                   )}
-                >
-                  {qrValue || workspaceId ? statusLine : "Preparing session"}
-                </p>
+                  autoComplete="off"
+                  spellCheck={false}
+                />
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-full border-white/[0.08] bg-white/[0.02] px-4 text-[11px] uppercase tracking-[0.18em] text-foreground hover:bg-white/[0.05]"
+                  className="h-10 rounded-full border-white/[0.08] bg-white/[0.02] px-4 text-[11px] uppercase tracking-[0.18em] text-foreground hover:bg-white/[0.05]"
                   onClick={onRefresh}
                 >
                   <RefreshCw data-icon="inline-start" className={phase === "booting" ? "animate-spin" : undefined} />

@@ -20,6 +20,8 @@ export default function App() {
           workspaceId={pairing.workspaceId}
           pairedDeviceName={pairing.pairedDeviceName}
           error={pairing.error}
+          clientName={pairing.clientName}
+          onClientNameChange={pairing.setClientName}
           onRefresh={pairing.refresh}
         />
       </AppFrame>

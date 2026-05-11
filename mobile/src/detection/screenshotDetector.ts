@@ -41,6 +41,7 @@ type NativeScreenshotDetectorModule = {
     deviceToken: string;
     serverUrl: string;
     connectedAt: string;
+    clientName?: string | null;
   }): Promise<void>;
   clearPairedSession(): Promise<void>;
 };

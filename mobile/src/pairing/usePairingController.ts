@@ -206,6 +206,7 @@ export function usePairingController(): PairingController {
           deviceToken: response.deviceToken,
           serverUrl: getConfiguredServerUrl(),
           connectedAt: new Date().toISOString(),
+          clientName: response.clientName ?? null,
         };
 
         await savePairedDeviceSession(session);

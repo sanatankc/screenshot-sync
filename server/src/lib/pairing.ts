@@ -6,6 +6,8 @@ import type {
   PairingSessionCreateResponse,
   PairingUpdatedEvent,
   ViewerSessionRestoreResponse,
+  ViewerSessionUpdateRequest,
+  ViewerSessionUpdateResponse,
 } from "@screenshot-sync/contracts";
 import {
   devices,
@@ -184,10 +186,15 @@ export async function completePairing(
     publishPairingUpdated(env, workspaceId, pairingEvent),
   ]);
 
+  const viewerSession = await db.query.viewerSessions.findFirst({
+    where: eq(viewerSessions.id, pairingSession.viewerSessionId),
+  });
+
   return {
     workspaceId,
     deviceId,
     deviceToken,
+    clientName: viewerSession?.clientName ?? null,
   };
 }
 
@@ -223,3 +230,26 @@ export async function restoreViewerSession(
     clientName: session.clientName ?? null,
   };
 }
+
+export async function updateViewerSession(
+  env: Env,
+  viewerSessionId: string,
+  payload: ViewerSessionUpdateRequest,
+): Promise<ViewerSessionUpdateResponse> {
+  const db = getDb(env);
+  const now = new Date();
+  const clientName = payload.clientName?.trim() || null;
+
+  await db.update(viewerSessions)
+    .set({
+      clientName,
+      lastSeenAt: now,
+    })
+    .where(eq(viewerSessions.id, viewerSessionId));
+
+  return {
+    viewerSessionId,
+    clientName,
+  };
+}
+

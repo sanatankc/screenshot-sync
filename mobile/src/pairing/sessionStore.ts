@@ -7,6 +7,7 @@ export type PairedDeviceSession = {
   deviceToken: string;
   serverUrl: string;
   connectedAt: string;
+  clientName: string | null;
 };
 
 export type DeviceIdentity = {
@@ -21,9 +22,10 @@ export async function loadPairedDeviceSession(): Promise<PairedDeviceSession | n
     device_token: string;
     server_url: string;
     connected_at: string;
+    client_name: string | null;
   }>(
     `
-      SELECT workspace_id, device_id, device_token, server_url, connected_at
+      SELECT workspace_id, device_id, device_token, server_url, connected_at, client_name
       FROM paired_device_session
       WHERE id = 1
       LIMIT 1;
@@ -40,22 +42,24 @@ export async function loadPairedDeviceSession(): Promise<PairedDeviceSession | n
     deviceToken: row.device_token,
     serverUrl: row.server_url,
     connectedAt: row.connected_at,
+    clientName: row.client_name,
   };
 }
 
 export async function savePairedDeviceSession(session: PairedDeviceSession) {
   database.runSync(
     `
-      INSERT INTO paired_device_session (id, workspace_id, device_id, device_token, server_url, connected_at)
-      VALUES (1, ?, ?, ?, ?, ?)
+      INSERT INTO paired_device_session (id, workspace_id, device_id, device_token, server_url, connected_at, client_name)
+      VALUES (1, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         workspace_id = excluded.workspace_id,
         device_id = excluded.device_id,
         device_token = excluded.device_token,
         server_url = excluded.server_url,
-        connected_at = excluded.connected_at;
+        connected_at = excluded.connected_at,
+        client_name = excluded.client_name;
     `,
-    [session.workspaceId, session.deviceId, session.deviceToken, session.serverUrl, session.connectedAt],
+    [session.workspaceId, session.deviceId, session.deviceToken, session.serverUrl, session.connectedAt, session.clientName],
   );
 
   await syncNativePairedSession(session).catch(() => undefined);

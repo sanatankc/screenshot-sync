@@ -50,7 +50,7 @@
     "production": {
       "name": "capture-server-production",
       "vars": {
-        "ALLOWED_ORIGINS": "https://capture-shot.vercel.app"
+        "ALLOWED_ORIGINS": "https://capture-shot.vercel.app,http://localhost:3001,http://127.0.0.1:3001"
       },
       "d1_databases": [
         {

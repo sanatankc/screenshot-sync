@@ -51,9 +51,12 @@ export async function ensureAppStorage() {
       device_id TEXT NOT NULL,
       device_token TEXT NOT NULL,
       server_url TEXT NOT NULL,
-      connected_at TEXT NOT NULL
+      connected_at TEXT NOT NULL,
+      client_name TEXT
     );
   `);
+
+  ensurePairedSessionColumn("client_name", "TEXT");
 
   database.execSync(`
     CREATE TABLE IF NOT EXISTS device_identity (
@@ -62,6 +65,15 @@ export async function ensureAppStorage() {
       created_at TEXT NOT NULL
     );
   `);
+}
+
+function ensurePairedSessionColumn(columnName: string, columnDefinition: string) {
+  const existingColumns = database.getAllSync<{ name: string }>(`PRAGMA table_info(paired_device_session);`);
+  const hasColumn = existingColumns.some((column) => column.name === columnName);
+
+  if (!hasColumn) {
+    database.execSync(`ALTER TABLE paired_device_session ADD COLUMN ${columnName} ${columnDefinition};`);
+  }
 }
 
 function ensureScreenshotQueueColumn(columnName: string, columnDefinition: string) {

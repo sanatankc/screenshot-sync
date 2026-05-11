@@ -16,7 +16,7 @@ export function ConnectedDevicesPanel({ session, onScanNewQr, onDisconnect }: Co
       <View style={styles.listRegion}>
         <View style={styles.deviceRow}>
           <View style={styles.deviceTextBlock}>
-            <Text style={styles.deviceName}># client 1</Text>
+            <Text style={styles.deviceName}>{session.clientName?.trim() || 'Unnamed viewer'}</Text>
           </View>
 
           <View style={styles.deviceActions}>

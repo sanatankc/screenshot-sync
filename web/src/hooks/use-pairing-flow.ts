@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PairingSessionCreateResponse, PairingUpdatedEvent, WorkspaceEvent } from "@screenshot-sync/contracts";
-import { createPairingSession, restoreViewerSession } from "@/lib/api";
+import { createPairingSession, restoreViewerSession, updateViewerSessionClientName } from "@/lib/api";
 import {
   API_BASE_URL,
   toPairingWebSocketUrl,
   VIEWER_SESSION_STORAGE_KEY,
+  VIEWER_CLIENT_NAME_STORAGE_KEY,
 } from "@/lib/runtime";
 
 type PairingPhase = "booting" | "waiting" | "paired" | "error";
@@ -18,6 +19,8 @@ type PairingFlowState = {
   webSessionToken: string | null;
   pairedDeviceName: string | null;
   error: string | null;
+  clientName: string;
+  setClientName: (value: string) => void;
   refresh: () => void;
 };
 
@@ -49,6 +52,23 @@ function clearStoredViewerSession() {
   window.localStorage.removeItem(VIEWER_SESSION_STORAGE_KEY);
 }
 
+function generateDefaultClientName() {
+  const first = ["Velvet", "Quiet", "Silver", "Golden", "Neon", "Feral", "Midnight", "Soft", "Static", "Lunar", "Glass", "Electric"];
+  const second = ["Canvas", "Signal", "Harbor", "Studio", "Orbit", "Frame", "Relay", "Archive", "Window", "Terminal", "Beacon", "Atlas"];
+  const left = first[Math.floor(Math.random() * first.length)];
+  const right = second[Math.floor(Math.random() * second.length)];
+  return `${left} ${right}`;
+}
+
+function loadStoredClientName() {
+  const raw = window.localStorage.getItem(VIEWER_CLIENT_NAME_STORAGE_KEY)?.trim();
+  return raw || generateDefaultClientName();
+}
+
+function saveStoredClientName(clientName: string) {
+  window.localStorage.setItem(VIEWER_CLIENT_NAME_STORAGE_KEY, clientName);
+}
+
 export function usePairingFlow(): PairingFlowState {
   const [phase, setPhase] = useState<PairingPhase>("booting");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -57,7 +77,33 @@ export function usePairingFlow(): PairingFlowState {
   const [webSessionToken, setWebSessionToken] = useState<string | null>(null);
   const [pairedDeviceName, setPairedDeviceName] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<"pairing" | "connection" | null>(null);
+  const [clientName, setClientName] = useState(() => loadStoredClientName());
   const socketRef = useRef<WebSocket | null>(null);
+  const socketGenerationRef = useRef(0);
+  const clientNameRef = useRef(clientName);
+
+  useEffect(() => {
+    clientNameRef.current = clientName;
+    saveStoredClientName(clientName.trim() || generateDefaultClientName());
+  }, [clientName]);
+
+  useEffect(() => {
+    const token = webSessionToken;
+    if (!token) {
+      return;
+    }
+
+    const normalizedName = clientName.trim();
+    const timeout = window.setTimeout(() => {
+      void updateViewerSessionClientName(API_BASE_URL, token, normalizedName || generateDefaultClientName()).catch(() => {
+        // Keep local editing responsive even if the network update fails.
+      });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [clientName, webSessionToken]);
 
   const startFreshPairing = useCallback(async () => {
     socketRef.current?.close();
@@ -70,7 +116,7 @@ export function usePairingFlow(): PairingFlowState {
     clearStoredViewerSession();
 
     try {
-      const session = await createPairingSession(API_BASE_URL);
+      const session = await createPairingSession(API_BASE_URL, clientNameRef.current);
       setPairingSession(session);
       setWebSessionToken(session.webSessionToken);
       setPhase("waiting");
@@ -102,6 +148,9 @@ export function usePairingFlow(): PairingFlowState {
       try {
         const restored = await restoreViewerSession(API_BASE_URL, stored.webSessionToken);
         setWorkspaceId(restored.workspaceId);
+        if (restored.clientName?.trim()) {
+          setClientName(restored.clientName);
+        }
         setPhase("paired");
       } catch {
         clearStoredViewerSession();
@@ -110,6 +159,7 @@ export function usePairingFlow(): PairingFlowState {
     })();
 
     return () => {
+      socketGenerationRef.current += 1;
       socketRef.current?.close();
       socketRef.current = null;
     };
@@ -123,16 +173,26 @@ export function usePairingFlow(): PairingFlowState {
 
     const socketUrl = toPairingWebSocketUrl(API_BASE_URL, pairingSession.pairingSessionId, token);
 
+    socketGenerationRef.current += 1;
+    const generation = socketGenerationRef.current;
+
     socketRef.current?.close();
     const socket = new WebSocket(socketUrl);
     socketRef.current = socket;
     setConnectionState("connecting");
 
     socket.addEventListener("open", () => {
+      if (socketGenerationRef.current !== generation || socketRef.current !== socket) {
+        return;
+      }
       setConnectionState("open");
     });
 
     socket.addEventListener("message", (event) => {
+      if (socketGenerationRef.current !== generation || socketRef.current !== socket) {
+        return;
+      }
+
       const payload = JSON.parse(String(event.data)) as WorkspaceEvent;
 
       if (payload.type !== "pairing.updated") {
@@ -152,16 +212,25 @@ export function usePairingFlow(): PairingFlowState {
     });
 
     socket.addEventListener("close", () => {
+      if (socketGenerationRef.current !== generation || socketRef.current !== socket) {
+        return;
+      }
       setConnectionState((current) => (current === "error" ? current : "closed"));
     });
 
     socket.addEventListener("error", () => {
+      if (socketGenerationRef.current !== generation || socketRef.current !== socket) {
+        return;
+      }
       setConnectionState("error");
       setPhase("error");
       setErrorState("connection");
     });
 
     return () => {
+      if (socketGenerationRef.current === generation && socketRef.current === socket) {
+        socketRef.current = null;
+      }
       socket.close();
     };
   }, [pairingSession, phase, webSessionToken]);
@@ -186,6 +255,8 @@ export function usePairingFlow(): PairingFlowState {
     webSessionToken,
     pairedDeviceName,
     error,
+    clientName,
+    setClientName,
     refresh: () => {
       void startFreshPairing();
     },

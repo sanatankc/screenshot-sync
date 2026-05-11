@@ -31,11 +31,21 @@ export type PairingCompleteResponse = {
   workspaceId: string;
   deviceId: string;
   deviceToken: string;
+  clientName: string | null;
 };
 
 export type ViewerSessionRestoreResponse = {
   viewerSessionId: string;
   workspaceId: string;
+  clientName: string | null;
+};
+
+export type ViewerSessionUpdateRequest = {
+  clientName?: string | null;
+};
+
+export type ViewerSessionUpdateResponse = {
+  viewerSessionId: string;
   clientName: string | null;
 };
 

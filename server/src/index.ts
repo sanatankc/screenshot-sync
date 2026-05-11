@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type {
   PairingCompleteRequest,
   PairingSessionCreateRequest,
+  ViewerSessionUpdateRequest,
   ScreenshotFailRequest,
   ScreenshotInitRequest,
   ScreenshotOriginalCompleteRequest,
@@ -18,7 +19,7 @@ import { deviceAuth, type AppVariables, viewerAuth } from "@server/lib/middlewar
 import { readBearerToken, requireViewerSession } from "@server/lib/auth";
 import { getDb } from "@server/lib/db";
 import { toScreenshotRecord } from "@server/lib/mappers";
-import { completePairing, createPairingSession, restoreViewerSession } from "@server/lib/pairing";
+import { completePairing, createPairingSession, restoreViewerSession, updateViewerSession } from "@server/lib/pairing";
 import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromAssetPath, getStorageKeyFromUploadPath, readUpload, storeUpload } from "@server/lib/uploads";
@@ -68,7 +69,7 @@ app.use(
 
       return allowedOrigins.has(origin) ? origin : null;
     },
-    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     exposeHeaders: ["Content-Length", "Content-Type"],
     maxAge: 86400,
@@ -158,6 +159,13 @@ app.get("/api/viewer/session", viewerAuth, async (c) => {
     const message = error instanceof Error ? error.message : "VIEWER_SESSION_NOT_RESTORABLE";
     return c.json({ ok: false, error: message }, 404);
   }
+});
+
+app.patch("/api/viewer/session", viewerAuth, async (c) => {
+  const viewerSession = c.get("viewerSession");
+  const payload = (await c.req.json().catch(() => ({}))) as ViewerSessionUpdateRequest;
+  const result = await updateViewerSession(c.env, viewerSession.id, payload);
+  return c.json(result, 200);
 });
 
 app.get("/api/screenshots", viewerAuth, async (c) => {
