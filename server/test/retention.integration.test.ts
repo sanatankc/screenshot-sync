@@ -151,7 +151,6 @@ describe("retention cleanup", () => {
     expect(messages[0].type).toBe("screenshot.created");
     expect(messages[1]).toEqual({
       type: "screenshot.deleted",
-      workspaceId: context.workspaceId,
       screenshotId: oldestRow.id,
     });
 

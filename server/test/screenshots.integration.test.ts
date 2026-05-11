@@ -237,6 +237,59 @@ describe("screenshot routes", () => {
     );
   });
 
+  it("deletes a screenshot and removes stored assets", async () => {
+    const context = await createPairedContext();
+
+    const initResponse = await SELF.fetch("http://example.com/api/screenshots/init", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${context.deviceToken}`,
+      },
+      body: JSON.stringify({
+        clientGeneratedId: "candidate-delete",
+        capturedAt: "2026-05-04T00:00:00.000Z",
+        detectedAt: "2026-05-04T00:00:01.000Z",
+        width: 1080,
+        height: 2400,
+        mimeType: "image/png",
+        fileSizeBytes: 2048,
+      }),
+    });
+    const initData = await initResponse.json<ScreenshotInitResponse>();
+
+    const previewStorageKey = extractStorageKey(initData.uploadTargets.preview.url);
+    const originalStorageKey = extractStorageKey(initData.uploadTargets.original.url);
+
+    await SELF.fetch(initData.uploadTargets.preview.url, { method: "PUT", body: new Uint8Array([1,2,3]) });
+    await SELF.fetch(initData.uploadTargets.original.url, { method: "PUT", body: new Uint8Array([4,5,6]) });
+
+    await SELF.fetch(`http://example.com/api/screenshots/${initData.screenshotId}/preview`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${context.deviceToken}` },
+      body: JSON.stringify({ storageKey: previewStorageKey, mimeType: "image/jpeg", sizeBytes: 3, width: 64, height: 64, blurhash: null }),
+    });
+
+    await SELF.fetch(`http://example.com/api/screenshots/${initData.screenshotId}/original`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${context.deviceToken}` },
+      body: JSON.stringify({ storageKey: originalStorageKey, mimeType: "image/png", sizeBytes: 3 }),
+    });
+
+    const deleteResponse = await SELF.fetch(`http://example.com/api/screenshots/${initData.screenshotId}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${context.webSessionToken}` },
+    });
+
+    expect(deleteResponse.status).toBe(200);
+    await expect(deleteResponse.json()).resolves.toEqual({ screenshotId: initData.screenshotId });
+
+    const row = await db.query.screenshots.findFirst({ where: eq(screenshots.id, initData.screenshotId) });
+    expect(row).toBeUndefined();
+    expect(await env.SCREENSHOT_ASSETS.get(previewStorageKey)).toBeNull();
+    expect(await env.SCREENSHOT_ASSETS.get(originalStorageKey)).toBeNull();
+  });
+
   it("marks a screenshot failed", async () => {
     const context = await createPairedContext();
 

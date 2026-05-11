@@ -273,3 +273,36 @@ export async function failScreenshot(
   await touchWorkspace(env, input.workspaceId, now);
   return toScreenshotRecord(updated);
 }
+
+export async function deleteScreenshot(
+  env: Env,
+  input: {
+    workspaceId: string;
+    screenshotId: string;
+  },
+): Promise<{ screenshotId: string }> {
+  const db = getDb(env);
+  const existing = await db.query.screenshots.findFirst({
+    where: and(
+      eq(screenshots.id, input.screenshotId),
+      eq(screenshots.workspaceId, input.workspaceId),
+    ),
+  });
+
+  if (!existing) {
+    throw new Error("SCREENSHOT_NOT_FOUND");
+  }
+
+  if (existing.previewStorageKey) {
+    await env.SCREENSHOT_ASSETS.delete(existing.previewStorageKey);
+  }
+
+  if (existing.originalStorageKey) {
+    await env.SCREENSHOT_ASSETS.delete(existing.originalStorageKey);
+  }
+
+  await db.delete(screenshots).where(eq(screenshots.id, input.screenshotId));
+  await touchWorkspace(env, input.workspaceId, new Date());
+
+  return { screenshotId: input.screenshotId };
+}

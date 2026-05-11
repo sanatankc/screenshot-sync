@@ -69,3 +69,7 @@ export type ScreenshotOriginalCompleteRequest = {
 export type ScreenshotFailRequest = {
   reason: string;
 };
+
+export type ScreenshotDeleteResponse = {
+  screenshotId: string;
+};

@@ -1,5 +1,6 @@
 import type {
   PairingSessionCreateResponse,
+  ScreenshotDeleteResponse,
   ScreenshotListResponse,
   ViewerSessionRestoreResponse,
   ViewerSessionUpdateResponse,
@@ -77,3 +78,22 @@ export async function updateViewerSessionClientName(
   return response.json() as Promise<ViewerSessionUpdateResponse>;
 }
 
+
+export async function deleteScreenshot(
+  apiBaseUrl: string,
+  webSessionToken: string,
+  screenshotId: string,
+): Promise<ScreenshotDeleteResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/screenshots/${screenshotId}`, {
+    method: "DELETE",
+    headers: {
+      authorization: `Bearer ${webSessionToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("SCREENSHOT_DELETE_FAILED");
+  }
+
+  return response.json() as Promise<ScreenshotDeleteResponse>;
+}

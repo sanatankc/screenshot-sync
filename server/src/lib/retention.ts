@@ -46,7 +46,6 @@ export async function applyWorkspaceRetention(env: Env, workspaceId: string) {
     rowsToDelete.map((row) =>
       publishScreenshotDeleted(env, workspaceId, {
         type: "screenshot.deleted",
-        workspaceId,
         screenshotId: row.id,
       }),
     ),

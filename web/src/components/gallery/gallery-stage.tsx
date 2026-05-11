@@ -5,6 +5,9 @@ import { copyImageToClipboard } from "@/components/gallery/copy-image-to-clipboa
 import { GalleryEmptyState } from "@/components/gallery/gallery-empty-state";
 import { GalleryNavbar } from "@/components/gallery/gallery-navbar";
 import { resolveAssetUrl } from "@/components/gallery/resolve-asset-url";
+import { deleteScreenshot } from "@/lib/api";
+import { API_BASE_URL } from "@/lib/runtime";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { GalleryStageProps } from "@/components/gallery/types";
 
 export function GalleryStage({
@@ -20,6 +23,9 @@ export function GalleryStage({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedIds((current) => current.filter((id) => screenshots.some((item) => item.id === id)));
@@ -81,6 +87,32 @@ export function GalleryStage({
     }
   };
 
+
+  const requestDelete = (ids: string[]) => {
+    setDeleteError(null);
+    setPendingDeleteIds(ids);
+  };
+
+  const confirmDelete = async () => {
+    if (pendingDeleteIds.length === 0) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await Promise.all(pendingDeleteIds.map((id) => deleteScreenshot(API_BASE_URL, webSessionToken, id)));
+      setSelectedIds((current) => current.filter((id) => !pendingDeleteIds.includes(id)));
+      setPendingDeleteIds([]);
+      onRefresh();
+    } catch {
+      setDeleteError("Could not delete screenshot(s).");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return <GallerySkeleton />;
   }
@@ -93,14 +125,14 @@ export function GalleryStage({
         onCopySelection={() => {
           void handleCopy();
         }}
-        onDeleteSelection={() => {}}
+        onDeleteSelection={() => requestDelete(selectedIds)}
         onDisconnect={onReset}
       />
 
       <div className="flex-1 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.075)_0.9px,transparent_1px)] [background-size:16px_16px]">
-        {error ? (
+        {error || deleteError ? (
         <div className="border-b border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive">
-          {error}
+          {deleteError ?? error}
         </div>
       ) : null}
 
@@ -120,7 +152,7 @@ export function GalleryStage({
                   isCopying={copyingId === screenshot.id}
                   onSelect={(event) => handleSelect(screenshot.id, index, event)}
                   onCopy={() => void handleCopy(screenshot)}
-                  onDelete={() => {}}
+                  onDelete={() => requestDelete([screenshot.id])}
                 />
               </div>
             );
@@ -128,6 +160,37 @@ export function GalleryStage({
         </div>
         )}
       </div>
+      <AlertDialog open={pendingDeleteIds.length > 0} onOpenChange={(open) => {
+        if (!open && !isDeleting) {
+          setPendingDeleteIds([]);
+          setDeleteError(null);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDeleteIds.length > 1 ? `Delete ${pendingDeleteIds.length} screenshots?` : "Delete screenshot?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDeleteIds.length > 1
+                ? "These screenshots will be removed from the gallery and their stored assets will be deleted. This action can’t be undone."
+                : "This screenshot will be removed from the gallery and its stored assets will be deleted. This action can’t be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting…" : pendingDeleteIds.length > 1 ? "Delete screenshots" : "Delete screenshot"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

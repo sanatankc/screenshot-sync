@@ -21,11 +21,12 @@ import { getDb } from "@server/lib/db";
 import { toScreenshotRecord } from "@server/lib/mappers";
 import { completePairing, createPairingSession, restoreViewerSession, updateViewerSession } from "@server/lib/pairing";
 import { applyWorkspaceRetention } from "@server/lib/retention";
-import { publishScreenshotCreated, publishScreenshotUpdated } from "@server/lib/workspace-hub";
+import { publishScreenshotCreated, publishScreenshotDeleted, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromAssetPath, getStorageKeyFromUploadPath, readUpload, storeUpload } from "@server/lib/uploads";
 import {
   completeOriginalUpload,
   completePreviewUpload,
+  deleteScreenshot,
   failScreenshot,
   initScreenshot,
   listScreenshots,
@@ -69,7 +70,7 @@ app.use(
 
       return allowedOrigins.has(origin) ? origin : null;
     },
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     exposeHeaders: ["Content-Length", "Content-Type"],
     maxAge: 86400,
@@ -210,6 +211,31 @@ app.get("/api/assets/*", async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";
     return c.json({ ok: false, error: message }, 401);
+  }
+});
+
+app.delete("/api/screenshots/:id", viewerAuth, async (c) => {
+  const viewerSession = c.get("viewerSession");
+  if (!viewerSession.workspaceId) {
+    return c.json({ ok: false, error: "VIEWER_SESSION_NOT_RESTORABLE" }, 409);
+  }
+
+  try {
+    const result = await deleteScreenshot(c.env, {
+      workspaceId: viewerSession.workspaceId,
+      screenshotId: c.req.param("id"),
+    });
+
+    await publishScreenshotDeleted(c.env, viewerSession.workspaceId, {
+      type: "screenshot.deleted",
+      screenshotId: result.screenshotId,
+    });
+
+    return c.json(result, 200);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "SCREENSHOT_DELETE_FAILED";
+    const status = message === "SCREENSHOT_NOT_FOUND" ? 404 : 500;
+    return c.json({ ok: false, error: message }, status);
   }
 });
 

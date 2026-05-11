@@ -24,7 +24,6 @@ export type ScreenshotUpdatedEvent = {
 
 export type ScreenshotDeletedEvent = {
   type: "screenshot.deleted";
-  workspaceId: string;
   screenshotId: string;
 };
 
