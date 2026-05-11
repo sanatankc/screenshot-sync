@@ -27,7 +27,7 @@ export function GalleryNavbar({
         <div className="ml-6 flex items-center border-l border-border">
           <ToolbarButton onClick={onCopySelection} disabled={!canCopySelection} className="bg-transparent">
             <Copy data-icon="inline-start" />
-            Copy {selectedCount > 1 ? `${selectedCount} Selected` : "Selected"}
+            {selectedCount > 1 ? `Copy ${selectedCount} Images as 1` : "Copy Image"}
           </ToolbarButton>
           <ToolbarButton onClick={onDeleteSelection} tone="danger" className="bg-transparent">
             <Trash2 data-icon="inline-start" />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { GallerySkeleton } from "@/components/gallery/gallery-skeleton";
 import { ScreenshotTile } from "@/components/gallery/screenshot-tile";
 import { copyImageToClipboard } from "@/components/gallery/copy-image-to-clipboard";
+import { copyScreenshotGridToClipboard } from "@/components/gallery/copy-screenshot-grid-to-clipboard";
 import { GalleryEmptyState } from "@/components/gallery/gallery-empty-state";
 import { GalleryNavbar } from "@/components/gallery/gallery-navbar";
 import { resolveAssetUrl } from "@/components/gallery/resolve-asset-url";
@@ -23,8 +24,10 @@ export function GalleryStage({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [isCopyingSelection, setIsCopyingSelection] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,6 +37,13 @@ export function GalleryStage({
   const selectedCount = selectedIds.length;
   const activeScreenshot = useMemo(
     () => screenshots.find((item) => item.id === selectedIds[0]) ?? null,
+    [screenshots, selectedIds],
+  );
+  const selectedScreenshots = useMemo(
+    () =>
+      selectedIds
+        .map((selectedId) => screenshots.find((item) => item.id === selectedId) ?? null)
+        .filter((item): item is NonNullable<typeof item> => Boolean(item)),
     [screenshots, selectedIds],
   );
 
@@ -80,15 +90,62 @@ export function GalleryStage({
     }
 
     setCopyingId(screenshot.id);
+    setCopyError(null);
     try {
       await copyImageToClipboard(assetUrl);
+    } catch {
+      setCopyError("Could not copy image.");
     } finally {
       window.setTimeout(() => setCopyingId((current) => (current === screenshot.id ? null : current)), 450);
     }
   };
 
+  const handleCopySelection = async () => {
+    if (selectedScreenshots.length === 0) {
+      return;
+    }
+
+    if (selectedScreenshots.length === 1) {
+      await handleCopy(selectedScreenshots[0]);
+      return;
+    }
+
+    const items = selectedScreenshots
+      .map((screenshot) => {
+        const assetUrl = resolveAssetUrl(
+          screenshot.originalStorageKey ?? screenshot.previewStorageKey,
+          webSessionToken,
+        );
+
+        if (!assetUrl) {
+          return null;
+        }
+
+        return {
+          id: screenshot.id,
+          url: assetUrl,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    if (items.length === 0) {
+      return;
+    }
+
+    setIsCopyingSelection(true);
+    setCopyError(null);
+    try {
+      await copyScreenshotGridToClipboard(items);
+    } catch {
+      setCopyError("Could not copy selected images.");
+    } finally {
+      setIsCopyingSelection(false);
+    }
+  };
+
 
   const requestDelete = (ids: string[]) => {
+    setCopyError(null);
     setDeleteError(null);
     setPendingDeleteIds(ids);
   };
@@ -99,6 +156,7 @@ export function GalleryStage({
     }
 
     setIsDeleting(true);
+    setCopyError(null);
     setDeleteError(null);
 
     try {
@@ -121,18 +179,18 @@ export function GalleryStage({
     <section className="flex min-h-screen w-full min-w-0 flex-1 flex-col bg-background text-foreground">
       <GalleryNavbar
         selectedCount={selectedCount}
-        canCopySelection={Boolean(activeScreenshot)}
+        canCopySelection={Boolean(activeScreenshot) && !isCopyingSelection}
         onCopySelection={() => {
-          void handleCopy();
+          void handleCopySelection();
         }}
         onDeleteSelection={() => requestDelete(selectedIds)}
         onDisconnect={onReset}
       />
 
       <div className="flex-1 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.075)_0.9px,transparent_1px)] [background-size:16px_16px]">
-        {error || deleteError ? (
+        {error || deleteError || copyError ? (
         <div className="border-b border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive">
-          {deleteError ?? error}
+          {copyError ?? deleteError ?? error}
         </div>
       ) : null}
 
