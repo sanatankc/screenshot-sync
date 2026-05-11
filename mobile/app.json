@@ -43,6 +43,12 @@
     ],
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e17eb6ab-d43c-41e4-b277-d0e01e1b5155"
+      }
+    },
+    "owner": "sanatankc"
   }
 }

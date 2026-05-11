@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "release:android": "node scripts/release-android.mjs"
   }
 }

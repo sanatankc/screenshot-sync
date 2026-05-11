@@ -1,0 +1,130 @@
+name: Release Android APK
+
+on:
+  push:
+    tags:
+      - "captr-android-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing captr-android-vX.Y.Z or captr-android-vX.Y.Z-prerelease tag to release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release-android:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release_meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "$TAG" =~ ^captr-android-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            echo "Unsupported tag format: $TAG"
+            exit 1
+          fi
+
+          VERSION="${BASH_REMATCH[1]}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check out requested tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git fetch --tags
+          git checkout "${{ steps.release_meta.outputs.tag }}"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up EAS CLI
+        run: npm install --global eas-cli@latest
+
+      - name: Verify Expo token
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "Missing EXPO_TOKEN GitHub secret."
+            exit 1
+          fi
+
+      - name: Start production APK build
+        working-directory: mobile
+        run: |
+          eas build \
+            --platform android \
+            --profile production-apk \
+            --message "Captr Android ${{ steps.release_meta.outputs.version }}" \
+            --non-interactive \
+            --wait \
+            --json > /tmp/eas-build.json
+
+      - name: Resolve build metadata
+        id: build_meta
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/eas-build.json', 'utf8'));
+          const build = Array.isArray(payload) ? payload[0] : payload;
+          if (!build?.id) {
+            throw new Error('Could not resolve EAS build id.');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_id=${build.id}\n`);
+          NODE
+
+      - name: Resolve APK URL
+        id: artifact_meta
+        working-directory: mobile
+        run: |
+          eas build:view "${{ steps.build_meta.outputs.build_id }}" --json > /tmp/eas-build-view.json
+          node <<'NODE'
+          const fs = require('fs');
+          const build = JSON.parse(fs.readFileSync('/tmp/eas-build-view.json', 'utf8'));
+          const artifactUrl =
+            build?.artifacts?.applicationArchiveUrl ??
+            build?.artifacts?.buildUrl ??
+            build?.artifacts?.url ??
+            build?.artifacts?.archiveUrl;
+          if (!artifactUrl) {
+            throw new Error(`Could not resolve build artifact URL from build metadata: ${JSON.stringify(build)}`);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `artifact_url=${artifactUrl}\n`);
+          NODE
+
+      - name: Download APK artifact
+        run: |
+          curl -L "${{ steps.artifact_meta.outputs.artifact_url }}" \
+            --output "/tmp/Captr-${{ steps.release_meta.outputs.version }}.apk"
+          test -f "/tmp/Captr-${{ steps.release_meta.outputs.version }}.apk"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          generate_release_notes: true
+          files: /tmp/Captr-${{ steps.release_meta.outputs.version }}.apk
