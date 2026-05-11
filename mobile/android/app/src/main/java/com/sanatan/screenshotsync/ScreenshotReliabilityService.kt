@@ -218,7 +218,7 @@ class ScreenshotReliabilityService : Service() {
     val manager = getSystemService(NotificationManager::class.java)
     val channel = NotificationChannel(
       NOTIFICATION_CHANNEL_ID,
-      "Capture",
+      "Captr",
       NotificationManager.IMPORTANCE_LOW,
     ).apply {
       description = "Keeps screenshot detection running in the background"
@@ -230,7 +230,7 @@ class ScreenshotReliabilityService : Service() {
   private fun createNotification(): Notification {
     return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_menu_upload)
-      .setContentTitle("Capture is running")
+      .setContentTitle("Captr is running")
       .setContentText("Max reliability mode keeps screenshot detection active.")
       .setOngoing(true)
       .setPriority(NotificationCompat.PRIORITY_LOW)

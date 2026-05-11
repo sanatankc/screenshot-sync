@@ -14,7 +14,7 @@ import { ensureAppStorage } from '../storage/bootstrap';
 import type { PairingController, PairingState, PairingPhase } from './types';
 
 const APP_VERSION = '1.0.0';
-const DEVICE_NAME = 'Capture Android';
+const DEVICE_NAME = 'Captr Android';
 
 function createDeviceIdentityValue() {
   if (typeof globalThis.crypto?.randomUUID === 'function') {

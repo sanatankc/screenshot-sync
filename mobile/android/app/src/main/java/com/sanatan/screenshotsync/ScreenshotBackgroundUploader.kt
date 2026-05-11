@@ -440,7 +440,7 @@ class ScreenshotBackgroundUploader(
       NotificationCompat.Builder(context, UPLOAD_NOTIFICATION_CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_menu_upload)
         .setContentTitle(if (count == 1) "Uploading screenshot" else "Uploading $count screenshots")
-        .setContentText("Capture is sending new captures in the background.")
+        .setContentText("Captr is sending new captures in the background.")
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         .setAutoCancel(true)
         .build(),

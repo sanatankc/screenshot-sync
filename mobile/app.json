@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Capture",
+    "name": "Captr",
     "slug": "capture-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Capture uses your camera to scan pairing codes."
+          "cameraPermission": "Captr uses your camera to scan pairing codes."
         }
       ]
     ],
