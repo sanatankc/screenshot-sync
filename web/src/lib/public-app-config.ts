@@ -3,6 +3,10 @@ import {
   buildAndroidApkDownloadUrl,
   buildOpenUrlBase,
   DEFAULT_APP_WEB_ORIGIN,
+  DEFAULT_ANDROID_APK_ASSET_PREFIX,
+  DEFAULT_ANDROID_RELEASE_TAG_PREFIX,
+  DEFAULT_GITHUB_OWNER,
+  DEFAULT_GITHUB_REPO,
   type PublicAppConfig,
   trimTrailingSlash,
 } from "@screenshot-sync/contracts";
@@ -29,4 +33,10 @@ export const PUBLIC_APP_CONFIG: PublicAppConfig = {
   openUrlBase: import.meta.env.VITE_APP_OPEN_URL_BASE ?? buildOpenUrlBase(webOrigin),
   androidApkDownloadUrl:
     import.meta.env.VITE_ANDROID_APK_DOWNLOAD_URL ?? buildAndroidApkDownloadUrl(webOrigin),
+  githubOwner: import.meta.env.VITE_GITHUB_OWNER ?? DEFAULT_GITHUB_OWNER,
+  githubRepo: import.meta.env.VITE_GITHUB_REPO ?? DEFAULT_GITHUB_REPO,
+  androidReleaseTagPrefix:
+    import.meta.env.VITE_ANDROID_RELEASE_TAG_PREFIX ?? DEFAULT_ANDROID_RELEASE_TAG_PREFIX,
+  androidApkAssetPrefix:
+    import.meta.env.VITE_ANDROID_APK_ASSET_PREFIX ?? DEFAULT_ANDROID_APK_ASSET_PREFIX,
 };

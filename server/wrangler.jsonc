@@ -7,7 +7,11 @@
     "ALLOWED_ORIGINS": "http://localhost:3001,http://127.0.0.1:3001",
     "APP_WEB_ORIGIN": "http://localhost:3001",
     "APP_OPEN_URL_BASE": "http://localhost:3001/open",
-    "ANDROID_APK_DOWNLOAD_URL": "http://localhost:3001/download/android/latest"
+    "ANDROID_APK_DOWNLOAD_URL": "http://localhost:3001/download/android/latest",
+    "GITHUB_OWNER": "sanatankc",
+    "GITHUB_REPO": "screenshot-sync",
+    "ANDROID_RELEASE_TAG_PREFIX": "captr-android-v",
+    "ANDROID_APK_ASSET_PREFIX": "Captr-"
   },
   "observability": {
     "enabled": true
@@ -56,7 +60,11 @@
         "ALLOWED_ORIGINS": "https://capture-shot.vercel.app,http://localhost:3001,http://127.0.0.1:3001",
         "APP_WEB_ORIGIN": "https://capture-shot.vercel.app",
         "APP_OPEN_URL_BASE": "https://capture-shot.vercel.app/open",
-        "ANDROID_APK_DOWNLOAD_URL": "https://capture-shot.vercel.app/download/android/latest"
+        "ANDROID_APK_DOWNLOAD_URL": "https://capture-shot.vercel.app/download/android/latest",
+        "GITHUB_OWNER": "sanatankc",
+        "GITHUB_REPO": "screenshot-sync",
+        "ANDROID_RELEASE_TAG_PREFIX": "captr-android-v",
+        "ANDROID_APK_ASSET_PREFIX": "Captr-"
       },
       "d1_databases": [
         {
