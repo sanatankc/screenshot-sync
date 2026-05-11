@@ -4,7 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-09-06",
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:3001,http://127.0.0.1:3001"
+    "ALLOWED_ORIGINS": "http://localhost:3001,http://127.0.0.1:3001",
+    "APP_WEB_ORIGIN": "http://localhost:3001",
+    "APP_OPEN_URL_BASE": "http://localhost:3001/open",
+    "ANDROID_APK_DOWNLOAD_URL": "http://localhost:3001/download/android/latest"
   },
   "observability": {
     "enabled": true
@@ -50,7 +53,10 @@
     "production": {
       "name": "capture-server-production",
       "vars": {
-        "ALLOWED_ORIGINS": "https://capture-shot.vercel.app,http://localhost:3001,http://127.0.0.1:3001"
+        "ALLOWED_ORIGINS": "https://capture-shot.vercel.app,http://localhost:3001,http://127.0.0.1:3001",
+        "APP_WEB_ORIGIN": "https://capture-shot.vercel.app",
+        "APP_OPEN_URL_BASE": "https://capture-shot.vercel.app/open",
+        "ANDROID_APK_DOWNLOAD_URL": "https://capture-shot.vercel.app/download/android/latest"
       },
       "d1_databases": [
         {

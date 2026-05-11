@@ -6,6 +6,7 @@ import { BackgroundBeams } from "@/components/ui/background-beams";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BlurText } from "@/components/pairing/blur-text";
+import { PUBLIC_APP_CONFIG } from "@/lib/public-app-config";
 import { SplitText } from "@/components/pairing/split-text";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +59,9 @@ export function PairingStage({
         <div className="flex max-w-[42rem] flex-col items-start justify-center gap-6">
           <div className="flex items-center gap-4">
             <img src="/logo.svg" alt="Captr" className="size-12 shrink-0" />
-            <div className="font-[var(--font-brand)] text-[28px] font-semibold tracking-[-0.07em] text-foreground">Captr</div>
+            <div className="font-[var(--font-brand)] text-[28px] font-semibold tracking-[-0.07em] text-foreground">
+              {PUBLIC_APP_CONFIG.appName}
+            </div>
           </div>
 
           <SplitText
@@ -74,12 +77,12 @@ export function PairingStage({
 
           <div className="max-w-[42rem] space-y-4">
             <BlurText
-              text="Seriously, stop. You don't need to anymore. Captr is built for people who keep taking screenshots on Android and later need them on desktop. Every screenshot you take from now on is automatically synced."
+              text={`Seriously, stop. You don't need to anymore. ${PUBLIC_APP_CONFIG.appName} is built for people who keep taking screenshots on Android and later need them on desktop. Every screenshot you take from now on is automatically synced.`}
               className="text-pretty text-[1rem] leading-8 text-muted-foreground sm:text-[1.06rem]"
               delay={0.45}
             />
             <BlurText
-              text="Scan this code to pair the app, or use it to download Captr first if it isn't installed yet."
+              text={`Scan this code to pair the app, or use it to download ${PUBLIC_APP_CONFIG.appName} first if it isn't installed yet.`}
               className="text-pretty text-[1rem] leading-8 text-muted-foreground sm:text-[1.06rem]"
               delay={0.62}
             />

@@ -1,5 +1,4 @@
-// export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8787";
-export const API_BASE_URL = "https://capture-server-production.sanatankc.workers.dev";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8787";
 export const VIEWER_SESSION_STORAGE_KEY = "screenshot-sync.viewer-session";
 export const VIEWER_CLIENT_NAME_STORAGE_KEY = "screenshot-sync.viewer-client-name";
 

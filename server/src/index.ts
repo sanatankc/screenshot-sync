@@ -23,6 +23,7 @@ import { completePairing, createPairingSession, restoreViewerSession, updateView
 import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotDeleted, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromAssetPath, getStorageKeyFromUploadPath, readUpload, storeUpload } from "@server/lib/uploads";
+import { getPublicAppConfig } from "@server/lib/public-app-config";
 import {
   completeOriginalUpload,
   completePreviewUpload,
@@ -122,6 +123,7 @@ app.get("/health", (c) => {
     },
     sharedContractExample: "pairing.updated" satisfies WorkspaceEvent["type"],
     screenshotTransportExample: exampleTransportScreenshot.status,
+    publicApp: getPublicAppConfig(c.env),
   });
 });
 
