@@ -8,6 +8,7 @@ import { PUBLIC_APP_CONFIG } from "@/lib/public-app-config";
 
 type GitHubRelease = {
   tag_name: string;
+  published_at: string;
   assets?: Array<{
     name?: string;
     browser_download_url?: string;
@@ -27,6 +28,7 @@ async function resolveLatestAndroidApk(config: PublicAppConfig) {
 
   const matchingAsset = releases
     .filter((release) => release.tag_name?.startsWith(config.androidReleaseTagPrefix))
+    .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
     .flatMap((release) => release.assets ?? [])
     .find(
       (asset) =>
