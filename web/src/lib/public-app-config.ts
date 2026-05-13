@@ -12,11 +12,11 @@ import {
 } from "@screenshot-sync/contracts";
 
 function getConfiguredWebOrigin() {
-  const configuredOrigin = import.meta.env.VITE_APP_WEB_ORIGIN;
+  // const configuredOrigin = import.meta.env.VITE_APP_WEB_ORIGIN;
 
-  if (configuredOrigin) {
-    return trimTrailingSlash(configuredOrigin);
-  }
+  // if (configuredOrigin) {
+  //   return trimTrailingSlash(configuredOrigin);
+  // }
 
   if (typeof window !== "undefined" && window.location.origin) {
     return trimTrailingSlash(window.location.origin);

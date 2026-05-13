@@ -1,5 +1,6 @@
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking } from 'react-native';
 import { completePairingSession, getConfiguredServerUrl, parsePairingQrPayload } from './api';
 import { logPairingError, toPairingDebugString } from './logging';
 import {
@@ -43,6 +44,56 @@ export function usePairingController(): PairingController {
 
   const permissionGranted = permission?.granted ?? false;
 
+  const beginPairing = useCallback(
+    async (rawValue: string) => {
+      const resolved = parsePairingQrPayload(rawValue);
+      const deviceIdentity =
+        (await loadDeviceIdentity()) ?? {
+          value: createDeviceIdentityValue(),
+          createdAt: new Date().toISOString(),
+        };
+
+      await saveDeviceIdentity(deviceIdentity);
+      setPairingState({
+        phase: 'pairing',
+        message: 'Connecting this phone…',
+        payload: resolved.payload,
+        workspaceId: null,
+        deviceId: null,
+      });
+
+      const response = await completePairingSession(
+        resolved.payload,
+        deviceIdentity.value,
+        DEVICE_NAME,
+        APP_VERSION,
+        resolved.serverUrl,
+      );
+
+      const session: PairedDeviceSession = {
+        workspaceId: response.workspaceId,
+        deviceId: response.deviceId,
+        deviceToken: response.deviceToken,
+        serverUrl: getConfiguredServerUrl(resolved.serverUrl),
+        connectedAt: new Date().toISOString(),
+        clientName: response.clientName ?? null,
+      };
+
+      await savePairedDeviceSession(session);
+      setPairedSession(session);
+      setIsScannerMode(false);
+      setLastErrorDebug(null);
+      setPairingState({
+        phase: 'paired',
+        message: 'This phone is connected. Screenshot watching and uploading happen automatically.',
+        payload: resolved.payload,
+        workspaceId: response.workspaceId,
+        deviceId: response.deviceId,
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     void (async () => {
       try {
@@ -81,6 +132,46 @@ export function usePairingController(): PairingController {
       }
     })();
   }, [permissionGranted]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    void (async () => {
+      const initialUrl = await Linking.getInitialURL().catch(() => null);
+      if (!mounted || !initialUrl) {
+        return;
+      }
+
+      try {
+        await beginPairing(initialUrl);
+      } catch (error) {
+        logPairingError('deep-link-pair', error, {
+          initialUrl,
+          configuredServerUrl: process.env.EXPO_PUBLIC_SERVER_URL ?? null,
+        });
+        setLastErrorDebug(toPairingDebugString(error));
+      }
+    })();
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      void (async () => {
+        try {
+          await beginPairing(url);
+        } catch (error) {
+          logPairingError('deep-link-pair', error, {
+            url,
+            configuredServerUrl: process.env.EXPO_PUBLIC_SERVER_URL ?? null,
+          });
+          setLastErrorDebug(toPairingDebugString(error));
+        }
+      })();
+    });
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [beginPairing]);
 
   const phase = useMemo<PairingPhase>(() => {
     if (pairedSession && !isScannerMode) {
@@ -184,43 +275,7 @@ export function usePairingController(): PairingController {
       setScanLocked(true);
 
       try {
-        const payload = parsePairingQrPayload(data);
-        const deviceIdentity =
-          (await loadDeviceIdentity()) ?? {
-            value: createDeviceIdentityValue(),
-            createdAt: new Date().toISOString(),
-          };
-
-        await saveDeviceIdentity(deviceIdentity);
-        setPairingState({
-          phase: 'pairing',
-          message: 'Connecting this phone…',
-          payload,
-          workspaceId: null,
-          deviceId: null,
-        });
-
-        const response = await completePairingSession(payload, deviceIdentity.value, DEVICE_NAME, APP_VERSION);
-        const session: PairedDeviceSession = {
-          workspaceId: response.workspaceId,
-          deviceId: response.deviceId,
-          deviceToken: response.deviceToken,
-          serverUrl: getConfiguredServerUrl(),
-          connectedAt: new Date().toISOString(),
-          clientName: response.clientName ?? null,
-        };
-
-        await savePairedDeviceSession(session);
-        setPairedSession(session);
-        setIsScannerMode(false);
-        setLastErrorDebug(null);
-        setPairingState({
-          phase: 'paired',
-          message: 'This phone is connected. Screenshot watching and uploading happen automatically.',
-          payload,
-          workspaceId: response.workspaceId,
-          deviceId: response.deviceId,
-        });
+        await beginPairing(data);
       } catch (error) {
         const nextMessage = error instanceof Error ? error.message : 'Could not read that QR code.';
         const debugString = toPairingDebugString(error);
@@ -240,7 +295,7 @@ export function usePairingController(): PairingController {
         setScanLocked(false);
       }
     },
-    [scanLocked],
+    [beginPairing, scanLocked],
   );
 
   const showConnectedState = Boolean(pairedSession && !isScannerMode);

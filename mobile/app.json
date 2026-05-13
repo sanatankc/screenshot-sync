@@ -2,6 +2,7 @@
   "expo": {
     "name": "Captr",
     "slug": "capture-mobile",
+    "scheme": "captr",
     "version": "0.0.1-alpha-2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

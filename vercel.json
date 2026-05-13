@@ -3,5 +3,15 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter screenshot-sync-web build",
   "outputDirectory": "web/dist",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/open",
+      "destination": "/"
+    },
+    {
+      "source": "/download/android/latest",
+      "destination": "/"
+    }
+  ]
 }

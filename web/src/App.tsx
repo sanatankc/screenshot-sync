@@ -1,10 +1,30 @@
 import { AppFrame } from "@/components/app/app-frame";
 import { GalleryStage } from "@/components/gallery";
+import { DownloadRedirectStage } from "@/components/pairing/download-redirect-stage";
+import { OpenStage } from "@/components/pairing/open-stage";
 import { PairingStage } from "@/components/pairing/pairing-stage";
 import { usePairingFlow } from "@/hooks/use-pairing-flow";
 import { useWorkspaceGallery } from "@/hooks/use-workspace-gallery";
 
 export default function App() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+
+  if (pathname === "/download/android/latest") {
+    return (
+      <AppFrame>
+        <DownloadRedirectStage />
+      </AppFrame>
+    );
+  }
+
+  if (pathname === "/open") {
+    return (
+      <AppFrame>
+        <OpenStage rawUrl={window.location.href} />
+      </AppFrame>
+    );
+  }
+
   const pairing = usePairingFlow();
   const gallery = useWorkspaceGallery(pairing.workspaceId, pairing.webSessionToken);
 

@@ -1,38 +1,19 @@
-import type { PairingCompleteRequest, PairingCompleteResponse, PairingQrPayload } from '@screenshot-sync/contracts';
+import type { PairingCompleteRequest, PairingCompleteResponse, PairingQrPayload, ResolvedPairingPayload } from '@screenshot-sync/contracts';
+import { parsePairingValue } from '@screenshot-sync/contracts';
 import { PairingFlowError } from './logging';
 
-function isPairingQrPayload(value: unknown): value is PairingQrPayload {
-  if (!value || typeof value !== 'object') {
-    return false;
+export function parsePairingQrPayload(rawValue: string): ResolvedPairingPayload {
+  const resolved = parsePairingValue(rawValue);
+
+  if (!resolved) {
+    throw new PairingFlowError('This QR code is not a Captr pairing code.', 'PAIRING_QR_INVALID_SHAPE');
   }
 
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    candidate.type === 'screenshot-sync-pairing' &&
-    typeof candidate.pairingSessionId === 'string' &&
-    typeof candidate.pairingToken === 'string'
-  );
+  return resolved;
 }
 
-export function parsePairingQrPayload(rawValue: string): PairingQrPayload {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(rawValue);
-  } catch {
-    throw new PairingFlowError('This QR code is not a Screenshot Sync pairing code.', 'PAIRING_QR_PARSE_FAILED');
-  }
-
-  if (!isPairingQrPayload(parsed)) {
-    throw new PairingFlowError('This QR code is not a Screenshot Sync pairing code.', 'PAIRING_QR_INVALID_SHAPE');
-  }
-
-  return parsed;
-}
-
-export function getConfiguredServerUrl() {
-  const configuredUrl = process.env.EXPO_PUBLIC_SERVER_URL;
+export function getConfiguredServerUrl(overrideServerUrl?: string | null) {
+  const configuredUrl = overrideServerUrl ?? process.env.EXPO_PUBLIC_SERVER_URL;
 
   if (!configuredUrl) {
     throw new PairingFlowError(
@@ -49,8 +30,9 @@ export async function completePairingSession(
   deviceIdentity: string,
   deviceName: string,
   appVersion: string,
+  serverUrlOverride?: string | null,
 ): Promise<PairingCompleteResponse> {
-  const serverUrl = getConfiguredServerUrl();
+  const serverUrl = getConfiguredServerUrl(serverUrlOverride);
   const request: PairingCompleteRequest = {
     pairingSessionId: qrPayload.pairingSessionId,
     pairingToken: qrPayload.pairingToken,

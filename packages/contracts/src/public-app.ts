@@ -62,3 +62,10 @@ export function buildGitHubReleaseAssetUrl({
   const assetName = buildAndroidApkAssetName(version, assetPrefix);
   return `https://github.com/${owner}/${repo}/releases/download/${tag}/${assetName}`;
 }
+
+export function buildGitHubReleasesPageUrl(
+  owner = DEFAULT_GITHUB_OWNER,
+  repo = DEFAULT_GITHUB_REPO,
+) {
+  return `https://github.com/${owner}/${repo}/releases`;
+}

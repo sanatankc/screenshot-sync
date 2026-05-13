@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import type { PairingSessionCreateResponse } from "@screenshot-sync/contracts";
+import { buildPairingOpenUrl, type PairingSessionCreateResponse } from "@screenshot-sync/contracts";
 import { BackgroundBeams } from "@/components/ui/background-beams";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BlurText } from "@/components/pairing/blur-text";
 import { PUBLIC_APP_CONFIG } from "@/lib/public-app-config";
+import { API_BASE_URL } from "@/lib/runtime";
 import { SplitText } from "@/components/pairing/split-text";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ export function PairingStage({
   onClientNameChange,
   onRefresh,
 }: PairingStageProps) {
-  const qrValue = session ? JSON.stringify(session.qrPayload) : null;
+  const qrValue = session ? buildPairingOpenUrl(PUBLIC_APP_CONFIG.openUrlBase, session.qrPayload, API_BASE_URL) : null;
   const [colors, setColors] = useState(DEFAULT_QR_COLORS);
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export function PairingStage({
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.18),transparent_36%,transparent_64%,rgba(0,0,0,0.12))]" />
 
       <div className="relative mx-auto grid min-h-screen w-full max-w-[84rem] items-center gap-10 px-4 py-16 lg:grid-cols-[minmax(0,42rem)_minmax(24rem,30rem)] lg:justify-between lg:gap-20 lg:px-6 xl:gap-24 xl:px-8">
-        <div className="flex max-w-[42rem] flex-col items-start justify-center gap-6">
+        <div className="flex min-w-0 max-w-[42rem] flex-col items-start justify-center gap-6">
           <div className="flex items-center gap-4">
             <img src="/logo.svg" alt="Captr" className="size-12 shrink-0" />
             <div className="font-[var(--font-brand)] text-[28px] font-semibold tracking-[-0.07em] text-foreground">
@@ -70,7 +71,7 @@ export function PairingStage({
             splitType="words"
             delay={65}
             duration={0.78}
-            className="max-w-[42rem] whitespace-nowrap font-[var(--font-display)] text-[2.35rem] font-extrabold leading-[0.98] tracking-[-0.02em] text-foreground sm:text-[2.85rem] lg:text-[3.2rem]"
+            className="max-w-[42rem] font-[var(--font-display)] text-[2.35rem] font-extrabold leading-[0.98] tracking-[-0.02em] text-foreground sm:whitespace-nowrap sm:text-[2.85rem] lg:text-[3.2rem]"
             from={{ opacity: 0, y: 42, rotateX: -42 }}
             to={{ opacity: 1, y: 0, rotateX: 0 }}
           />
