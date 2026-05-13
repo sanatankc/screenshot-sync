@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sanatan.screenshotsync",
+      "sha256_cert_fingerprints": [
+        "CF:5C:81:EB:7D:DA:89:02:0A:06:3A:D1:C6:9E:22:E7:67:DC:13:7C:43:F8:28:3B:43:F6:95:CC:D4:A4:C8:4C"
+      ]
+    }
+  }
+]

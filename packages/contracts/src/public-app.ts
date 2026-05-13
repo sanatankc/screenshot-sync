@@ -1,6 +1,9 @@
 export const APP_NAME = "Captr";
 
 export const DEFAULT_APP_WEB_ORIGIN = "http://localhost:3001";
+export const DEFAULT_WEB_API_BASE_URL = "http://127.0.0.1:8787";
+export const DEFAULT_PRODUCTION_API_BASE_URL =
+  "https://capture-server-production.sanatankc.workers.dev";
 export const DEFAULT_APP_OPEN_PATH = "/open";
 export const DEFAULT_ANDROID_APK_DOWNLOAD_PATH = "/download/android/latest";
 export const DEFAULT_GITHUB_OWNER = "sanatankc";
@@ -11,6 +14,7 @@ export const DEFAULT_ANDROID_APK_ASSET_PREFIX = "Captr-";
 export type PublicAppConfig = {
   appName: string;
   webOrigin: string;
+  apiBaseUrl: string;
   openUrlBase: string;
   androidApkDownloadUrl: string;
   githubOwner: string;

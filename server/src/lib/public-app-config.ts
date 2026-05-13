@@ -3,6 +3,7 @@ import {
   buildAndroidApkDownloadUrl,
   buildOpenUrlBase,
   DEFAULT_APP_WEB_ORIGIN,
+  DEFAULT_PRODUCTION_API_BASE_URL,
   DEFAULT_ANDROID_APK_ASSET_PREFIX,
   DEFAULT_ANDROID_RELEASE_TAG_PREFIX,
   DEFAULT_GITHUB_OWNER,
@@ -18,6 +19,7 @@ export function getPublicAppConfig(env: Env): PublicAppConfig {
   return {
     appName: APP_NAME,
     webOrigin,
+    apiBaseUrl: env.APP_API_BASE_URL ?? DEFAULT_PRODUCTION_API_BASE_URL,
     openUrlBase: env.APP_OPEN_URL_BASE ?? buildOpenUrlBase(webOrigin),
     androidApkDownloadUrl:
       env.ANDROID_APK_DOWNLOAD_URL ?? buildAndroidApkDownloadUrl(webOrigin),

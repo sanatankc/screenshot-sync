@@ -5,6 +5,7 @@ export type Env = {
   WORKSPACE_HUB: DurableObjectNamespace;
   ALLOWED_ORIGINS?: string;
   APP_WEB_ORIGIN?: string;
+  APP_API_BASE_URL?: string;
   APP_OPEN_URL_BASE?: string;
   ANDROID_APK_DOWNLOAD_URL?: string;
   GITHUB_OWNER?: string;

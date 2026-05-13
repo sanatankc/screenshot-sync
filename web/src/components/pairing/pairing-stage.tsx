@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BlurText } from "@/components/pairing/blur-text";
 import { PUBLIC_APP_CONFIG } from "@/lib/public-app-config";
-import { API_BASE_URL } from "@/lib/runtime";
 import { SplitText } from "@/components/pairing/split-text";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +38,13 @@ export function PairingStage({
   onClientNameChange,
   onRefresh,
 }: PairingStageProps) {
-  const qrValue = session ? buildPairingOpenUrl(PUBLIC_APP_CONFIG.openUrlBase, session.qrPayload, API_BASE_URL) : null;
+  const qrValue = session
+    ? buildPairingOpenUrl(
+        PUBLIC_APP_CONFIG.openUrlBase,
+        session.qrPayload,
+        PUBLIC_APP_CONFIG.apiBaseUrl,
+      )
+    : null;
   const [colors, setColors] = useState(DEFAULT_QR_COLORS);
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 package com.sanatan.screenshotsync
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 
@@ -38,6 +39,11 @@ class MainActivity : ReactActivity() {
               mainComponentName,
               fabricEnabled
           ){})
+  }
+
+  override fun onNewIntent(intent: Intent?) {
+    super.onNewIntent(intent)
+    setIntent(intent)
   }
 
   /**

@@ -1,5 +1,6 @@
 import type { PairingCompleteRequest, PairingCompleteResponse, PairingQrPayload, ResolvedPairingPayload } from '@screenshot-sync/contracts';
 import { parsePairingValue } from '@screenshot-sync/contracts';
+import { PUBLIC_APP_CONFIG } from '../config/publicAppConfig';
 import { PairingFlowError } from './logging';
 
 export function parsePairingQrPayload(rawValue: string): ResolvedPairingPayload {
@@ -13,7 +14,8 @@ export function parsePairingQrPayload(rawValue: string): ResolvedPairingPayload 
 }
 
 export function getConfiguredServerUrl(overrideServerUrl?: string | null) {
-  const configuredUrl = overrideServerUrl ?? process.env.EXPO_PUBLIC_SERVER_URL;
+  const configuredUrl =
+    overrideServerUrl ?? process.env.EXPO_PUBLIC_SERVER_URL ?? PUBLIC_APP_CONFIG.apiBaseUrl;
 
   if (!configuredUrl) {
     throw new PairingFlowError(

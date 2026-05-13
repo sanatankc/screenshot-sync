@@ -3,6 +3,7 @@ import {
   buildAndroidApkDownloadUrl,
   buildOpenUrlBase,
   DEFAULT_APP_WEB_ORIGIN,
+  DEFAULT_PRODUCTION_API_BASE_URL,
   DEFAULT_ANDROID_APK_ASSET_PREFIX,
   DEFAULT_ANDROID_RELEASE_TAG_PREFIX,
   DEFAULT_GITHUB_OWNER,
@@ -20,6 +21,7 @@ const webOrigin = getConfiguredWebOrigin();
 export const PUBLIC_APP_CONFIG: PublicAppConfig = {
   appName: APP_NAME,
   webOrigin,
+  apiBaseUrl: process.env.EXPO_PUBLIC_SERVER_URL ?? DEFAULT_PRODUCTION_API_BASE_URL,
   openUrlBase: process.env.EXPO_PUBLIC_APP_OPEN_URL_BASE ?? buildOpenUrlBase(webOrigin),
   androidApkDownloadUrl:
     process.env.EXPO_PUBLIC_ANDROID_APK_DOWNLOAD_URL ?? buildAndroidApkDownloadUrl(webOrigin),
