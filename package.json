@@ -11,5 +11,8 @@
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "release:android": "node scripts/release-android.mjs"
+  },
+  "dependencies": {
+    "tslib": "^2.8.1"
   }
 }
