@@ -230,4 +230,139 @@ describe("pairing routes", () => {
     });
     expect(workspaceEvent).toEqual(pairingEvent);
   });
+
+  it("revokes both sides when either viewer or device disconnects", async () => {
+    const createResponse = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "MacBook Chrome" }),
+    });
+    const created = await createResponse.json<PairingSessionCreateResponse>();
+
+    const completeResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: created.pairingSessionId,
+        pairingToken: created.pairingToken,
+        device: devicePayload,
+      }),
+    });
+    const completed = await completeResponse.json<PairingCompleteResponse>();
+
+    const viewerDisconnect = await SELF.fetch("http://example.com/api/viewer/disconnect", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${created.webSessionToken}`,
+      },
+    });
+
+    expect(viewerDisconnect.status).toBe(200);
+
+    const [viewerAfterViewerDisconnect, deviceAfterViewerDisconnect] = await Promise.all([
+      db.query.viewerSessions.findFirst({ where: eq(viewerSessions.workspaceId, completed.workspaceId) }),
+      db.query.devices.findFirst({ where: eq(devices.id, completed.deviceId) }),
+    ]);
+
+    expect(viewerAfterViewerDisconnect?.revokedAt).not.toBeNull();
+    expect(deviceAfterViewerDisconnect?.revokedAt).not.toBeNull();
+
+    const createResponseTwo = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "Studio Display Safari" }),
+    });
+    const createdTwo = await createResponseTwo.json<PairingSessionCreateResponse>();
+
+    const completeResponseTwo = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: createdTwo.pairingSessionId,
+        pairingToken: createdTwo.pairingToken,
+        device: {
+          ...devicePayload,
+          deviceIdentity: "device_identity_pixel_9",
+        },
+      }),
+    });
+    const completedTwo = await completeResponseTwo.json<PairingCompleteResponse>();
+
+    const deviceDisconnect = await SELF.fetch("http://example.com/api/device/disconnect", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${completedTwo.deviceToken}`,
+      },
+    });
+
+    expect(deviceDisconnect.status).toBe(200);
+
+    const [viewerAfterDeviceDisconnect, deviceAfterDeviceDisconnect] = await Promise.all([
+      db.query.viewerSessions.findFirst({ where: eq(viewerSessions.workspaceId, completedTwo.workspaceId) }),
+      db.query.devices.findFirst({ where: eq(devices.id, completedTwo.deviceId) }),
+    ]);
+
+    expect(viewerAfterDeviceDisconnect?.revokedAt).not.toBeNull();
+    expect(deviceAfterDeviceDisconnect?.revokedAt).not.toBeNull();
+  });
+
+  it("reuses a revoked device identity when pairing again after disconnect", async () => {
+    const createResponse = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "MacBook Chrome" }),
+    });
+    const created = await createResponse.json<PairingSessionCreateResponse>();
+
+    const completeResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: created.pairingSessionId,
+        pairingToken: created.pairingToken,
+        device: devicePayload,
+      }),
+    });
+    const completed = await completeResponse.json<PairingCompleteResponse>();
+
+    await SELF.fetch("http://example.com/api/device/disconnect", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${completed.deviceToken}`,
+      },
+    });
+
+    const secondCreateResponse = await SELF.fetch("http://example.com/api/pairing/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientName: "Studio Display Safari" }),
+    });
+    const secondCreated = await secondCreateResponse.json<PairingSessionCreateResponse>();
+
+    const secondCompleteResponse = await SELF.fetch("http://example.com/api/pairing/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pairingSessionId: secondCreated.pairingSessionId,
+        pairingToken: secondCreated.pairingToken,
+        device: {
+          ...devicePayload,
+          appVersion: "1.0.1",
+        },
+      }),
+    });
+
+    expect(secondCompleteResponse.status).toBe(200);
+    const secondCompleted = await secondCompleteResponse.json<PairingCompleteResponse>();
+
+    expect(secondCompleted.workspaceId).toBe(completed.workspaceId);
+    expect(secondCompleted.deviceId).toBe(completed.deviceId);
+
+    const revivedDevice = await db.query.devices.findFirst({
+      where: eq(devices.id, completed.deviceId),
+    });
+
+    expect(revivedDevice?.revokedAt).toBeNull();
+    expect(revivedDevice?.appVersion).toBe("1.0.1");
+  });
 });

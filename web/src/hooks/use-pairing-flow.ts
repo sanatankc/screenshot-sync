@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PairingSessionCreateResponse, PairingUpdatedEvent, WorkspaceEvent } from "@screenshot-sync/contracts";
-import { createPairingSession, restoreViewerSession, updateViewerSessionClientName } from "@/lib/api";
+import { createPairingSession, disconnectViewerSession, restoreViewerSession, updateViewerSessionClientName } from "@/lib/api";
 import {
   API_BASE_URL,
   toPairingWebSocketUrl,
@@ -22,6 +22,7 @@ type PairingFlowState = {
   clientName: string;
   setClientName: (value: string) => void;
   refresh: () => void;
+  disconnect: () => void;
 };
 
 type StoredViewerSession = {
@@ -128,6 +129,33 @@ export function usePairingFlow(): PairingFlowState {
       setErrorState("pairing");
     }
   }, []);
+
+  const resetLocalState = useCallback(() => {
+    socketRef.current?.close();
+    socketRef.current = null;
+    setPairingSession(null);
+    setWebSessionToken(null);
+    setWorkspaceId(null);
+    setPairedDeviceName(null);
+    setConnectionState("idle");
+    setErrorState(null);
+    clearStoredViewerSession();
+  }, []);
+
+  const refresh = useCallback(() => {
+    void startFreshPairing();
+  }, [startFreshPairing]);
+
+  const disconnect = useCallback(() => {
+    const token = webSessionToken;
+    resetLocalState();
+    if (token) {
+      void disconnectViewerSession(API_BASE_URL, token).catch(() => {
+        // best effort: local reset already happened
+      });
+    }
+    void startFreshPairing();
+  }, [resetLocalState, startFreshPairing, webSessionToken]);
 
   useEffect(() => {
     void (async () => {
@@ -257,8 +285,7 @@ export function usePairingFlow(): PairingFlowState {
     error,
     clientName,
     setClientName,
-    refresh: () => {
-      void startFreshPairing();
-    },
+    refresh,
+    disconnect,
   };
 }

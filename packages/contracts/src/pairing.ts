@@ -154,3 +154,26 @@ export type ViewerSessionUpdateResponse = {
 };
 
 export type PairingSessionStatus = "pending" | "paired" | "expired" | "cancelled";
+
+
+export type DevicePresenceStatus = "online" | "offline";
+
+export type ViewerPresenceRecord = {
+  viewerSessionId: string;
+  clientName: string | null;
+  status: "online" | "offline";
+  lastSeenAt: string;
+};
+
+export type DevicePresenceRecord = {
+  deviceId: string;
+  deviceName: string;
+  appVersion: string;
+  status: DevicePresenceStatus;
+  lastSeenAt: string;
+};
+
+export type WorkspacePresenceResponse = {
+  viewers: ViewerPresenceRecord[];
+  devices: DevicePresenceRecord[];
+};

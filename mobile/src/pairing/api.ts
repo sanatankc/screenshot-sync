@@ -1,4 +1,4 @@
-import type { PairingCompleteRequest, PairingCompleteResponse, PairingQrPayload, ResolvedPairingPayload } from '@screenshot-sync/contracts';
+import type { PairingCompleteRequest, PairingCompleteResponse, PairingQrPayload, ResolvedPairingPayload, WorkspacePresenceResponse } from '@screenshot-sync/contracts';
 import { parsePairingValue } from '@screenshot-sync/contracts';
 import { PUBLIC_APP_CONFIG } from '../config/publicAppConfig';
 import { PairingFlowError } from './logging';
@@ -25,6 +25,18 @@ export function getConfiguredServerUrl(overrideServerUrl?: string | null) {
   }
 
   return configuredUrl.replace(/\/$/, '');
+}
+
+export function toDeviceWorkspaceWebSocketUrl(
+  serverUrl: string,
+  workspaceId: string,
+  deviceToken: string,
+) {
+  const baseUrl = new URL(getConfiguredServerUrl(serverUrl));
+  baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  baseUrl.pathname = `/api/device/workspaces/${workspaceId}/ws`;
+  baseUrl.search = new URLSearchParams({ token: deviceToken }).toString();
+  return baseUrl.toString();
 }
 
 export async function completePairingSession(
@@ -87,4 +99,41 @@ export async function completePairingSession(
   }
 
   return (await response.json()) as PairingCompleteResponse;
+}
+
+
+export async function fetchDevicePresence(
+  serverUrl: string,
+  deviceToken: string,
+): Promise<WorkspacePresenceResponse> {
+  const response = await fetch(`${getConfiguredServerUrl(serverUrl)}/api/device/presence`, {
+    headers: { authorization: `Bearer ${deviceToken}` },
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new PairingFlowError(
+      'This phone is no longer connected to the workspace.',
+      'DEVICE_SESSION_INVALID',
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error("DEVICE_PRESENCE_FETCH_FAILED");
+  }
+
+  return response.json() as Promise<WorkspacePresenceResponse>;
+}
+
+export async function disconnectDeviceSession(
+  serverUrl: string,
+  deviceToken: string,
+): Promise<void> {
+  const response = await fetch(`${getConfiguredServerUrl(serverUrl)}/api/device/disconnect`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${deviceToken}` },
+  });
+
+  if (!response.ok && response.status !== 401 && response.status !== 403) {
+    throw new Error('DEVICE_DISCONNECT_FAILED');
+  }
 }

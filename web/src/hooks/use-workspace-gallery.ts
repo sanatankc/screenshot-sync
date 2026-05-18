@@ -6,6 +6,7 @@ import type {
   ScreenshotListResponse,
   ScreenshotRecord,
   ScreenshotUpdatedEvent,
+  WorkspaceDisconnectedEvent,
   WorkspaceEvent,
 } from "@screenshot-sync/contracts";
 import { listScreenshots } from "@/lib/api";
@@ -29,11 +30,20 @@ function upsertScreenshot(items: ScreenshotRecord[], screenshot: ScreenshotRecor
   return sortScreenshots([screenshot, ...withoutExisting]);
 }
 
-export function useWorkspaceGallery(workspaceId: string | null, webSessionToken: string | null) {
+export function useWorkspaceGallery(
+  workspaceId: string | null,
+  webSessionToken: string | null,
+  onWorkspaceDisconnected?: () => void,
+) {
   const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const disconnectHandlerRef = useRef(onWorkspaceDisconnected);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
+
+  useEffect(() => {
+    disconnectHandlerRef.current = onWorkspaceDisconnected;
+  }, [onWorkspaceDisconnected]);
 
   const screenshotsQuery = useQuery({
     queryKey: workspaceId ? screenshotsKey(workspaceId) : ["screenshots", "inactive"],
@@ -77,6 +87,10 @@ export function useWorkspaceGallery(workspaceId: string | null, webSessionToken:
           return;
         }
 
+        if (reconnectTimerRef.current) {
+          window.clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
         setConnectionState("open");
         void queryClient.invalidateQueries({ queryKey: screenshotsKey(workspaceId) });
       });
@@ -108,20 +122,32 @@ export function useWorkspaceGallery(workspaceId: string | null, webSessionToken:
             items: (current?.items ?? []).filter((item) => item.id !== deletedEvent.screenshotId),
             nextCursor: current?.nextCursor ?? null,
           }));
+          return;
+        }
+
+        if (payload.type === "workspace.disconnected") {
+          const disconnectedEvent = payload as WorkspaceDisconnectedEvent;
+          if (disconnectedEvent.workspaceId === workspaceId) {
+            disconnectHandlerRef.current?.();
+          }
         }
       });
 
       socket.addEventListener("close", () => {
-        if (cancelled) {
+        if (cancelled || socketRef.current !== socket) {
           return;
         }
 
+        socketRef.current = null;
         setConnectionState("closed");
-        reconnectTimerRef.current = window.setTimeout(connect, RECONNECT_DELAY_MS);
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null;
+          connect();
+        }, RECONNECT_DELAY_MS);
       });
 
       socket.addEventListener("error", () => {
-        if (cancelled) {
+        if (cancelled || socketRef.current !== socket) {
           return;
         }
 

@@ -7,18 +7,21 @@ import type {
 } from "@screenshot-sync/contracts";
 import { describe, expect, it } from "vitest";
 
-function waitForMessage(socket: WebSocket): Promise<WorkspaceEvent> {
+function waitForMessage(socket: WebSocket, predicate?: (event: WorkspaceEvent) => boolean): Promise<WorkspaceEvent> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("Timed out waiting for websocket message")), 2000);
 
-    socket.addEventListener(
-      "message",
-      (event) => {
-        clearTimeout(timeout);
-        resolve(JSON.parse(String(event.data)) as WorkspaceEvent);
-      },
-      { once: true },
-    );
+    const handler = (event: MessageEvent) => {
+      const parsed = JSON.parse(String(event.data)) as WorkspaceEvent;
+      if (predicate && !predicate(parsed)) {
+        return;
+      }
+      clearTimeout(timeout);
+      socket.removeEventListener("message", handler);
+      resolve(parsed);
+    };
+
+    socket.addEventListener("message", handler);
   });
 }
 
@@ -91,7 +94,7 @@ describe("workspace hub", () => {
     expect(workspaceSocket).toBeTruthy();
     workspaceSocket!.accept();
 
-    const screenshotEventPromise = waitForMessage(workspaceSocket!);
+    const screenshotEventPromise = waitForMessage(workspaceSocket!, (event) => event.type === "screenshot.created");
 
     const initResponse = await SELF.fetch("http://example.com/api/screenshots/init", {
       method: "POST",

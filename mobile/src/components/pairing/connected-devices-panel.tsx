@@ -1,4 +1,5 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ViewerPresenceRecord } from '@screenshot-sync/contracts';
 import type { PairedDeviceSession } from '../../pairing/sessionStore';
 import { zenTheme } from '../../theme/zen';
 
@@ -6,21 +7,36 @@ const monoFamily = Platform.select({ ios: 'Menlo', android: 'monospace', default
 
 type ConnectedDevicesPanelProps = {
   session: PairedDeviceSession;
+  viewerPresence: ViewerPresenceRecord | null;
   onScanNewQr: () => void;
   onDisconnect: () => void;
 };
 
-export function ConnectedDevicesPanel({ session, onScanNewQr, onDisconnect }: ConnectedDevicesPanelProps) {
+function formatPresenceMeta(viewerPresence: ViewerPresenceRecord | null) {
+  if (!viewerPresence) {
+    return 'Checking status…';
+  }
+
+  if (viewerPresence.status === 'online') {
+    return 'Online';
+  }
+
+  const date = new Date(viewerPresence.lastSeenAt);
+  return `Offline · Last seen ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+export function ConnectedDevicesPanel({ session, viewerPresence, onScanNewQr, onDisconnect }: ConnectedDevicesPanelProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.listRegion}>
         <View style={styles.deviceRow}>
           <View style={styles.deviceTextBlock}>
             <Text style={styles.deviceName}>{session.clientName?.trim() || 'Unnamed viewer'}</Text>
+            <Text style={styles.deviceMeta}>{formatPresenceMeta(viewerPresence)}</Text>
           </View>
 
           <View style={styles.deviceActions}>
-            <View style={styles.liveDot} />
+            <View style={[styles.liveDot, viewerPresence?.status === 'offline' ? styles.liveDotOffline : null]} />
             <Pressable style={styles.disconnectButton} onPress={onDisconnect}>
               <Text style={styles.disconnectButtonText}>disconnect</Text>
             </Pressable>
@@ -81,6 +97,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: zenTheme.foreground,
     backgroundColor: zenTheme.success,
+  },
+  liveDotOffline: {
+    backgroundColor: zenTheme.border,
   },
   disconnectButton: {
     borderRadius: 12,

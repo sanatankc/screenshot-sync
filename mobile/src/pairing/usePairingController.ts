@@ -1,8 +1,9 @@
 import { useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking } from 'react-native';
-import { completePairingSession, getConfiguredServerUrl, parsePairingQrPayload } from './api';
-import { logPairingError, toPairingDebugString } from './logging';
+import type { ViewerPresenceRecord, ViewerPresenceUpdatedEvent, WorkspaceDisconnectedEvent, WorkspaceEvent } from '@screenshot-sync/contracts';
+import { completePairingSession, disconnectDeviceSession, fetchDevicePresence, getConfiguredServerUrl, parsePairingQrPayload, toDeviceWorkspaceWebSocketUrl } from './api';
+import { PairingFlowError, logPairingError, toPairingDebugString } from './logging';
 import {
   clearPairedDeviceSession,
   loadDeviceIdentity,
@@ -17,6 +18,28 @@ import type { PairingController, PairingState, PairingPhase } from './types';
 
 const APP_VERSION = '1.0.0';
 const DEVICE_NAME = `${PUBLIC_APP_CONFIG.appName} Android`;
+const WORKSPACE_RECONNECT_DELAY_MS = 1_500;
+
+function shouldHandleIncomingPairingUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    const hasPairingParams =
+      Boolean(url.searchParams.get('pairingSessionId')) &&
+      Boolean(url.searchParams.get('pairingToken'));
+
+    if (!hasPairingParams) {
+      return false;
+    }
+
+    if (url.protocol === 'captr:') {
+      return url.hostname === 'pair';
+    }
+
+    return true;
+  } catch {
+    return rawUrl.trim().startsWith('{');
+  }
+}
 
 function createDeviceIdentityValue() {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -38,11 +61,29 @@ export function usePairingController(): PairingController {
   const [permission, requestPermission] = useCameraPermissions();
   const [pairingState, setPairingState] = useState<PairingState>(initialState);
   const [scanLocked, setScanLocked] = useState(false);
+  const scanLockedRef = useRef(false);
   const [lastErrorDebug, setLastErrorDebug] = useState<string | null>(null);
   const [pairedSession, setPairedSession] = useState<PairedDeviceSession | null>(null);
   const [isScannerMode, setIsScannerMode] = useState(false);
+  const [viewerPresence, setViewerPresence] = useState<ViewerPresenceRecord | null>(null);
 
   const permissionGranted = permission?.granted ?? false;
+
+  const resetToReadyState = useCallback(() => {
+    setPairedSession(null);
+    setViewerPresence(null);
+    setScanLocked(false);
+    scanLockedRef.current = false;
+    setLastErrorDebug(null);
+    setIsScannerMode(false);
+    setPairingState({
+      phase: permissionGranted ? 'ready' : 'request-permission',
+      message: permissionGranted ? 'Center the QR code inside the frame.' : 'Allow camera access to scan your pairing code.',
+      payload: null,
+      workspaceId: null,
+      deviceId: null,
+    });
+  }, [permissionGranted]);
 
   const beginPairing = useCallback(
     async (rawValue: string) => {
@@ -138,7 +179,7 @@ export function usePairingController(): PairingController {
 
     void (async () => {
       const initialUrl = await Linking.getInitialURL().catch(() => null);
-      if (!mounted || !initialUrl) {
+      if (!mounted || !initialUrl || !shouldHandleIncomingPairingUrl(initialUrl)) {
         return;
       }
 
@@ -154,6 +195,10 @@ export function usePairingController(): PairingController {
     })();
 
     const subscription = Linking.addEventListener('url', ({ url }) => {
+      if (!shouldHandleIncomingPairingUrl(url)) {
+        return;
+      }
+
       void (async () => {
         try {
           await beginPairing(url);
@@ -173,6 +218,141 @@ export function usePairingController(): PairingController {
     };
   }, [beginPairing]);
 
+
+  useEffect(() => {
+    if (!pairedSession || isScannerMode) {
+      setViewerPresence(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshPresence = async () => {
+      try {
+        const result = await fetchDevicePresence(pairedSession.serverUrl, pairedSession.deviceToken);
+        if (cancelled) {
+          return;
+        }
+        const matchingViewer = result.viewers.find((viewer: ViewerPresenceRecord) => (viewer.clientName ?? '').trim() === (pairedSession.clientName ?? '').trim())
+          ?? result.viewers[0]
+          ?? null;
+        setViewerPresence(matchingViewer);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        if (error instanceof PairingFlowError && error.code === 'DEVICE_SESSION_INVALID') {
+          await clearPairedDeviceSession();
+          resetToReadyState();
+          return;
+        }
+
+        setViewerPresence((current) => current);
+      }
+    };
+
+    void refreshPresence();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isScannerMode, pairedSession, resetToReadyState]);
+
+  useEffect(() => {
+    if (!pairedSession || isScannerMode) {
+      return;
+    }
+
+    let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let socket: WebSocket | null = null;
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      socket = new WebSocket(
+        toDeviceWorkspaceWebSocketUrl(
+          pairedSession.serverUrl,
+          pairedSession.workspaceId,
+          pairedSession.deviceToken,
+        ),
+      );
+
+      socket.addEventListener('message', (event) => {
+        const payload = JSON.parse(String(event.data)) as WorkspaceEvent;
+
+        if (payload.type === 'viewer.presence.updated') {
+          const presenceEvent = payload as ViewerPresenceUpdatedEvent;
+          const currentClientName = (pairedSession.clientName ?? '').trim();
+
+          if (!currentClientName || (presenceEvent.clientName ?? '').trim() === currentClientName) {
+            setViewerPresence({
+              viewerSessionId: presenceEvent.viewerSessionId,
+              clientName: presenceEvent.clientName,
+              status: presenceEvent.status,
+              lastSeenAt: presenceEvent.lastSeenAt,
+            });
+          }
+          return;
+        }
+
+        if (payload.type === 'workspace.disconnected') {
+          const disconnectedEvent = payload as WorkspaceDisconnectedEvent;
+          if (disconnectedEvent.workspaceId === pairedSession.workspaceId) {
+            void clearPairedDeviceSession();
+            resetToReadyState();
+          }
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        if (cancelled) {
+          return;
+        }
+
+        void (async () => {
+          try {
+            await fetchDevicePresence(pairedSession.serverUrl, pairedSession.deviceToken);
+          } catch (error) {
+            if (cancelled) {
+              return;
+            }
+
+            if (error instanceof PairingFlowError && error.code === 'DEVICE_SESSION_INVALID') {
+              await clearPairedDeviceSession();
+              resetToReadyState();
+              return;
+            }
+          }
+
+          if (cancelled) {
+            return;
+          }
+
+          reconnectTimer = setTimeout(() => {
+            connect();
+          }, WORKSPACE_RECONNECT_DELAY_MS);
+        })();
+      });
+
+      socket.addEventListener('error', () => {
+        socket?.close();
+      });
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      socket?.close();
+    };
+  }, [isScannerMode, pairedSession, resetToReadyState]);
   const phase = useMemo<PairingPhase>(() => {
     if (pairedSession && !isScannerMode) {
       return 'paired';
@@ -233,6 +413,7 @@ export function usePairingController(): PairingController {
 
   const enterScannerMode = useCallback(() => {
     setScanLocked(false);
+    scanLockedRef.current = false;
     setLastErrorDebug(null);
     setIsScannerMode(true);
     setPairingState({
@@ -261,17 +442,23 @@ export function usePairingController(): PairingController {
   }, [pairedSession]);
 
   const disconnectDevice = useCallback(() => {
+    const session = pairedSession;
+    resetToReadyState();
     void clearPairedDeviceSession();
-    setPairedSession(null);
-    enterScannerMode();
-  }, [enterScannerMode]);
+    if (session) {
+      void disconnectDeviceSession(session.serverUrl, session.deviceToken).catch(() => {
+        // best effort: local reset already happened
+      });
+    }
+  }, [pairedSession, resetToReadyState]);
 
   const handleBarcodeScanned = useCallback(
     async ({ data }: BarcodeScanningResult) => {
-      if (scanLocked) {
+      if (scanLockedRef.current) {
         return;
       }
 
+      scanLockedRef.current = true;
       setScanLocked(true);
 
       try {
@@ -292,10 +479,11 @@ export function usePairingController(): PairingController {
           deviceId: null,
         });
       } finally {
+        scanLockedRef.current = false;
         setScanLocked(false);
       }
     },
-    [beginPairing, scanLocked],
+    [beginPairing],
   );
 
   const showConnectedState = Boolean(pairedSession && !isScannerMode);
@@ -308,6 +496,7 @@ export function usePairingController(): PairingController {
     canExitScanner: Boolean(pairedSession),
     pairingState,
     pairedSession,
+    viewerPresence,
     lastErrorDebug,
     requestCameraAccess: () => {
       void requestCameraAccess();

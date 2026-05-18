@@ -1,4 +1,4 @@
-import type { PairingQrPayload } from '@screenshot-sync/contracts';
+import type { PairingQrPayload, ViewerPresenceRecord } from '@screenshot-sync/contracts';
 import type { PairedDeviceSession } from './sessionStore';
 
 export type PairingPhase = 'hydrating' | 'request-permission' | 'ready' | 'pairing' | 'paired' | 'error';
@@ -12,6 +12,7 @@ export type PairingState = {
 };
 
 export type PairingController = {
+  viewerPresence: ViewerPresenceRecord | null;
   phase: PairingPhase;
   message: string;
   permissionGranted: boolean;

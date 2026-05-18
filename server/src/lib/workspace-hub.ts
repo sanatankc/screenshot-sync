@@ -3,6 +3,8 @@ import type {
   ScreenshotCreatedEvent,
   ScreenshotDeletedEvent,
   ScreenshotUpdatedEvent,
+  ViewerPresenceUpdatedEvent,
+  WorkspaceDisconnectedEvent,
   WorkspaceEvent,
 } from "@screenshot-sync/contracts";
 import type { Env } from "@server/lib/env";
@@ -40,5 +42,13 @@ export function publishScreenshotUpdated(env: Env, workspaceId: string, event: S
 }
 
 export function publishScreenshotDeleted(env: Env, workspaceId: string, event: ScreenshotDeletedEvent) {
+  return publishWorkspaceEvent(env, workspaceId, event);
+}
+
+export function publishViewerPresenceUpdated(env: Env, workspaceId: string, event: ViewerPresenceUpdatedEvent) {
+  return publishWorkspaceEvent(env, workspaceId, event);
+}
+
+export function publishWorkspaceDisconnected(env: Env, workspaceId: string, event: WorkspaceDisconnectedEvent) {
   return publishWorkspaceEvent(env, workspaceId, event);
 }

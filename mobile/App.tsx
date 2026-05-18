@@ -25,6 +25,7 @@ export default function App() {
         {pairing.showConnectedState && pairing.pairedSession ? (
           <ConnectedDevicesPanel
             session={pairing.pairedSession}
+            viewerPresence={pairing.viewerPresence}
             onScanNewQr={pairing.enterScannerMode}
             onDisconnect={pairing.disconnectDevice}
           />

@@ -19,11 +19,12 @@ import { deviceAuth, type AppVariables, viewerAuth } from "@server/lib/middlewar
 import { readBearerToken, requireViewerSession } from "@server/lib/auth";
 import { getDb } from "@server/lib/db";
 import { toScreenshotRecord } from "@server/lib/mappers";
-import { completePairing, createPairingSession, restoreViewerSession, updateViewerSession } from "@server/lib/pairing";
+import { completePairing, createPairingSession, disconnectDevice, disconnectViewer, restoreViewerSession, updateViewerSession } from "@server/lib/pairing";
 import { applyWorkspaceRetention } from "@server/lib/retention";
 import { publishScreenshotCreated, publishScreenshotDeleted, publishScreenshotUpdated } from "@server/lib/workspace-hub";
 import { getStorageKeyFromAssetPath, getStorageKeyFromUploadPath, readUpload, storeUpload } from "@server/lib/uploads";
 import { getPublicAppConfig } from "@server/lib/public-app-config";
+import { listWorkspacePresence } from "@server/lib/presence";
 import {
   completeOriginalUpload,
   completePreviewUpload,
@@ -171,6 +172,21 @@ app.patch("/api/viewer/session", viewerAuth, async (c) => {
   return c.json(result, 200);
 });
 
+app.post("/api/viewer/disconnect", viewerAuth, async (c) => {
+  const viewerSession = c.get("viewerSession");
+  await disconnectViewer(c.env, viewerSession.id);
+  return c.json({ ok: true }, 200);
+});
+
+async function getWorkspacePresenceSnapshot(env: Env, workspaceId: string) {
+  const stub = env.WORKSPACE_HUB.get(env.WORKSPACE_HUB.idFromName(`workspace:${workspaceId}`));
+  const response = await stub.fetch("https://workspace-hub.internal/presence");
+  if (!response.ok) {
+    throw new Error("WORKSPACE_PRESENCE_UNAVAILABLE");
+  }
+  return response.json() as Promise<{ activeViewerSessionIds: string[] }>;
+}
+
 app.get("/api/screenshots", viewerAuth, async (c) => {
   const viewerSession = c.get("viewerSession");
   if (!viewerSession.workspaceId) {
@@ -178,6 +194,32 @@ app.get("/api/screenshots", viewerAuth, async (c) => {
   }
   const result = await listScreenshots(c.env, viewerSession.workspaceId, c.req.query("limit") ?? null);
   return c.json(result, 200);
+});
+
+app.get("/api/workspaces/:workspaceId/presence", viewerAuth, async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const viewerSession = c.get("viewerSession");
+
+  if (!viewerSession.workspaceId || viewerSession.workspaceId !== workspaceId) {
+    return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
+  }
+
+  const { activeViewerSessionIds } = await getWorkspacePresenceSnapshot(c.env, workspaceId);
+  const result = await listWorkspacePresence(c.env, workspaceId, activeViewerSessionIds);
+  return c.json(result, 200);
+});
+
+app.get("/api/device/presence", deviceAuth, async (c) => {
+  const device = c.get("device");
+  const { activeViewerSessionIds } = await getWorkspacePresenceSnapshot(c.env, device.workspaceId);
+  const result = await listWorkspacePresence(c.env, device.workspaceId, activeViewerSessionIds);
+  return c.json(result, 200);
+});
+
+app.post("/api/device/disconnect", deviceAuth, async (c) => {
+  const device = c.get("device");
+  await disconnectDevice(c.env, device.id);
+  return c.json({ ok: true }, 200);
 });
 
 app.get("/api/assets/*", async (c) => {
@@ -358,10 +400,37 @@ app.get("/api/workspaces/:workspaceId/ws", async (c) => {
     }
 
     const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(`workspace:${workspaceId}`));
-    const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
+    const websocketUrl = new URL("https://workspace-hub.internal/websocket");
+    websocketUrl.searchParams.set("channelType", "workspace");
+    websocketUrl.searchParams.set("workspaceId", workspaceId);
+    websocketUrl.searchParams.set("viewerSessionId", viewerSession.id);
+    const websocketRequest = new Request(websocketUrl.toString(), c.req.raw);
     return stub.fetch(websocketRequest);
   } catch (error) {
     const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";
+    return c.json({ ok: false, error: message }, 401);
+  }
+});
+
+app.get("/api/device/workspaces/:workspaceId/ws", async (c) => {
+  const workspaceId = c.req.param("workspaceId");
+  const token = c.req.query("token") ?? readBearerToken(c.req.header("authorization") ?? null);
+
+  try {
+    const device = await requireDevice(c.env, token ? `Bearer ${token}` : null);
+
+    if (device.workspaceId !== workspaceId) {
+      return c.json({ ok: false, error: "WORKSPACE_FORBIDDEN" }, 403);
+    }
+
+    const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(`workspace:${workspaceId}`));
+    const websocketUrl = new URL("https://workspace-hub.internal/websocket");
+    websocketUrl.searchParams.set("channelType", "device");
+    websocketUrl.searchParams.set("workspaceId", workspaceId);
+    const websocketRequest = new Request(websocketUrl.toString(), c.req.raw);
+    return stub.fetch(websocketRequest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "DEVICE_UNAUTHORIZED";
     return c.json({ ok: false, error: message }, 401);
   }
 });
@@ -385,7 +454,9 @@ app.get("/api/pairing-sessions/:pairingSessionId/ws", async (c) => {
     }
 
     const stub = c.env.WORKSPACE_HUB.get(c.env.WORKSPACE_HUB.idFromName(`pairing:${pairingSessionId}`));
-    const websocketRequest = new Request("https://workspace-hub.internal/websocket", c.req.raw);
+    const websocketUrl = new URL("https://workspace-hub.internal/websocket");
+    websocketUrl.searchParams.set("channelType", "pairing");
+    const websocketRequest = new Request(websocketUrl.toString(), c.req.raw);
     return stub.fetch(websocketRequest);
   } catch (error) {
     const message = error instanceof Error ? error.message : "VIEWER_UNAUTHORIZED";

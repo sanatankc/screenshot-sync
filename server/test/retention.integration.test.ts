@@ -12,13 +12,17 @@ import { describe, expect, it } from "vitest";
 
 const db = drizzle(env.DB, { schema: { screenshots } });
 
-function waitForMessages(socket: WebSocket, count: number): Promise<WorkspaceEvent[]> {
+function waitForMessages(socket: WebSocket, count: number, predicate?: (event: WorkspaceEvent) => boolean): Promise<WorkspaceEvent[]> {
   return new Promise((resolve, reject) => {
     const messages: WorkspaceEvent[] = [];
     const timeout = setTimeout(() => reject(new Error("Timed out waiting for websocket messages")), 2000);
 
     const handler = (event: MessageEvent) => {
-      messages.push(JSON.parse(String(event.data)) as WorkspaceEvent);
+      const parsed = JSON.parse(String(event.data)) as WorkspaceEvent;
+      if (predicate && !predicate(parsed)) {
+        return;
+      }
+      messages.push(parsed);
       if (messages.length >= count) {
         clearTimeout(timeout);
         socket.removeEventListener("message", handler);
@@ -126,7 +130,7 @@ describe("retention cleanup", () => {
     const socket = wsResponse.webSocket!;
     socket.accept();
 
-    const messagesPromise = waitForMessages(socket, 2);
+    const messagesPromise = waitForMessages(socket, 2, (event) => event.type === "screenshot.created" || event.type === "screenshot.deleted");
 
     const initResponse = await SELF.fetch("http://example.com/api/screenshots/init", {
       method: "POST",

@@ -4,6 +4,7 @@ import type {
   ScreenshotListResponse,
   ViewerSessionRestoreResponse,
   ViewerSessionUpdateResponse,
+  WorkspacePresenceResponse,
 } from "@screenshot-sync/contracts";
 
 export async function createPairingSession(apiBaseUrl: string, clientName?: string): Promise<PairingSessionCreateResponse> {
@@ -78,6 +79,22 @@ export async function updateViewerSessionClientName(
   return response.json() as Promise<ViewerSessionUpdateResponse>;
 }
 
+export async function disconnectViewerSession(
+  apiBaseUrl: string,
+  webSessionToken: string,
+): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/viewer/disconnect`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${webSessionToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("VIEWER_SESSION_DISCONNECT_FAILED");
+  }
+}
+
 
 export async function deleteScreenshot(
   apiBaseUrl: string,
@@ -96,4 +113,21 @@ export async function deleteScreenshot(
   }
 
   return response.json() as Promise<ScreenshotDeleteResponse>;
+}
+
+
+export async function listWorkspacePresence(
+  apiBaseUrl: string,
+  webSessionToken: string,
+  workspaceId: string,
+): Promise<WorkspacePresenceResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/workspaces/${workspaceId}/presence`, {
+    headers: { authorization: `Bearer ${webSessionToken}` },
+  });
+
+  if (!response.ok) {
+    throw new Error("WORKSPACE_PRESENCE_LIST_FAILED");
+  }
+
+  return response.json() as Promise<WorkspacePresenceResponse>;
 }

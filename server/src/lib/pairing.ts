@@ -5,6 +5,7 @@ import type {
   PairingSessionCreateRequest,
   PairingSessionCreateResponse,
   PairingUpdatedEvent,
+  WorkspaceDisconnectedEvent,
   ViewerSessionRestoreResponse,
   ViewerSessionUpdateRequest,
   ViewerSessionUpdateResponse,
@@ -18,7 +19,7 @@ import {
 import type { Env } from "@server/lib/env";
 import { createId, createToken, sha256 } from "@server/lib/crypto";
 import { getDb } from "@server/lib/db";
-import { publishPairingSessionEvent, publishPairingUpdated } from "@server/lib/workspace-hub";
+import { publishPairingSessionEvent, publishPairingUpdated, publishWorkspaceDisconnected } from "@server/lib/workspace-hub";
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
 const VIEWER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -97,7 +98,7 @@ export async function completePairing(
 
   const deviceIdentityHash = await sha256(payload.device.deviceIdentity);
   const existingDevice = await db.query.devices.findFirst({
-    where: and(eq(devices.deviceIdentityHash, deviceIdentityHash), isNull(devices.revokedAt)),
+    where: eq(devices.deviceIdentityHash, deviceIdentityHash),
   });
 
   const deviceToken = createToken("devtok");
@@ -110,28 +111,66 @@ export async function completePairing(
     workspaceId = createId("ws");
     deviceId = createId("dev");
 
-    await db.batch([
-      db.insert(workspaces).values({
-        id: workspaceId,
-        name: payload.device.deviceName,
-        activeDeviceId: deviceId,
-        createdAt: now,
-        updatedAt: now,
-        lastActivityAt: now,
-      }),
-      db.insert(devices).values({
-        id: deviceId,
-        workspaceId,
-        deviceIdentityHash,
-        deviceTokenHash,
-        platform: payload.device.platform,
-        deviceName: payload.device.deviceName,
-        appVersion: payload.device.appVersion,
-        lastSeenAt: now,
-        createdAt: now,
-        revokedAt: null,
-      }),
-    ]);
+    try {
+      await db.batch([
+        db.insert(workspaces).values({
+          id: workspaceId,
+          name: payload.device.deviceName,
+          activeDeviceId: deviceId,
+          createdAt: now,
+          updatedAt: now,
+          lastActivityAt: now,
+        }),
+        db.insert(devices).values({
+          id: deviceId,
+          workspaceId,
+          deviceIdentityHash,
+          deviceTokenHash,
+          platform: payload.device.platform,
+          deviceName: payload.device.deviceName,
+          appVersion: payload.device.appVersion,
+          lastSeenAt: now,
+          createdAt: now,
+          revokedAt: null,
+        }),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("devices.device_identity_hash") && !message.includes("SQLITE_CONSTRAINT")) {
+        throw error;
+      }
+
+      await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+      const racedDevice = await db.query.devices.findFirst({
+        where: eq(devices.deviceIdentityHash, deviceIdentityHash),
+      });
+
+      if (!racedDevice?.workspaceId || !racedDevice.id) {
+        throw error;
+      }
+
+      workspaceId = racedDevice.workspaceId;
+      deviceId = racedDevice.id;
+
+      await db.batch([
+        db.update(devices)
+          .set({
+            deviceTokenHash,
+            platform: payload.device.platform,
+            deviceName: payload.device.deviceName,
+            appVersion: payload.device.appVersion,
+            lastSeenAt: now,
+          })
+          .where(eq(devices.id, deviceId)),
+        db.update(workspaces)
+          .set({
+            activeDeviceId: deviceId,
+            updatedAt: now,
+            lastActivityAt: now,
+          })
+          .where(eq(workspaces.id, workspaceId)),
+      ]);
+    }
   } else {
     await db.batch([
       db.update(devices)
@@ -141,6 +180,7 @@ export async function completePairing(
           deviceName: payload.device.deviceName,
           appVersion: payload.device.appVersion,
           lastSeenAt: now,
+          revokedAt: null,
         })
         .where(eq(devices.id, deviceId)),
       db.update(workspaces)
@@ -158,6 +198,7 @@ export async function completePairing(
       .set({
         workspaceId,
         lastSeenAt: now,
+        revokedAt: null,
       })
       .where(eq(viewerSessions.id, pairingSession.viewerSessionId)),
     db.update(pairingSessions)
@@ -253,3 +294,66 @@ export async function updateViewerSession(
   };
 }
 
+export async function disconnectViewer(
+  env: Env,
+  viewerSessionId: string,
+): Promise<void> {
+  const db = getDb(env);
+  const now = new Date();
+  const session = await db.query.viewerSessions.findFirst({
+    where: and(eq(viewerSessions.id, viewerSessionId), isNull(viewerSessions.revokedAt)),
+  });
+
+  if (!session?.workspaceId) {
+    return;
+  }
+
+  await db.batch([
+    db.update(viewerSessions)
+      .set({ revokedAt: now, lastSeenAt: now })
+      .where(and(eq(viewerSessions.workspaceId, session.workspaceId), isNull(viewerSessions.revokedAt))),
+    db.update(devices)
+      .set({ revokedAt: now, lastSeenAt: now })
+      .where(and(eq(devices.workspaceId, session.workspaceId), isNull(devices.revokedAt))),
+  ]);
+
+  const event: WorkspaceDisconnectedEvent = {
+    type: "workspace.disconnected",
+    workspaceId: session.workspaceId,
+    origin: "viewer",
+  };
+
+  await publishWorkspaceDisconnected(env, session.workspaceId, event);
+}
+
+export async function disconnectDevice(
+  env: Env,
+  deviceId: string,
+): Promise<void> {
+  const db = getDb(env);
+  const now = new Date();
+  const device = await db.query.devices.findFirst({
+    where: and(eq(devices.id, deviceId), isNull(devices.revokedAt)),
+  });
+
+  if (!device) {
+    return;
+  }
+
+  await db.batch([
+    db.update(devices)
+      .set({ revokedAt: now, lastSeenAt: now })
+      .where(and(eq(devices.workspaceId, device.workspaceId), isNull(devices.revokedAt))),
+    db.update(viewerSessions)
+      .set({ revokedAt: now, lastSeenAt: now })
+      .where(and(eq(viewerSessions.workspaceId, device.workspaceId), isNull(viewerSessions.revokedAt))),
+  ]);
+
+  const event: WorkspaceDisconnectedEvent = {
+    type: "workspace.disconnected",
+    workspaceId: device.workspaceId,
+    origin: "device",
+  };
+
+  await publishWorkspaceDisconnected(env, device.workspaceId, event);
+}

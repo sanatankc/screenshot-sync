@@ -22,6 +22,22 @@ export type ScreenshotUpdatedEvent = {
   screenshot: ScreenshotRecord;
 };
 
+export type ViewerPresenceStatus = "online" | "offline";
+
+export type ViewerPresenceUpdatedEvent = {
+  type: "viewer.presence.updated";
+  viewerSessionId: string;
+  clientName: string | null;
+  status: ViewerPresenceStatus;
+  lastSeenAt: string;
+};
+
+export type WorkspaceDisconnectedEvent = {
+  type: "workspace.disconnected";
+  workspaceId: string;
+  origin: "viewer" | "device";
+};
+
 export type ScreenshotDeletedEvent = {
   type: "screenshot.deleted";
   screenshotId: string;
@@ -29,6 +45,8 @@ export type ScreenshotDeletedEvent = {
 
 export type WorkspaceEvent =
   | PairingUpdatedEvent
+  | ViewerPresenceUpdatedEvent
+  | WorkspaceDisconnectedEvent
   | ScreenshotCreatedEvent
   | ScreenshotUpdatedEvent
   | ScreenshotDeletedEvent;

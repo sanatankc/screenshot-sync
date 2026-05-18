@@ -26,7 +26,7 @@ export default function App() {
   }
 
   const pairing = usePairingFlow();
-  const gallery = useWorkspaceGallery(pairing.workspaceId, pairing.webSessionToken);
+  const gallery = useWorkspaceGallery(pairing.workspaceId, pairing.webSessionToken, pairing.disconnect);
 
   const showGallery = pairing.phase === "paired" && pairing.workspaceId && pairing.webSessionToken;
 
@@ -65,7 +65,7 @@ export default function App() {
         onRefresh={() => {
           void gallery.refetch();
         }}
-        onReset={pairing.refresh}
+        onReset={pairing.disconnect}
       />
     </AppFrame>
   );
