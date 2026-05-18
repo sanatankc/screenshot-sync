@@ -3,7 +3,7 @@
     "name": "Captr",
     "slug": "capture-mobile",
     "scheme": "captr",
-    "version": "0.0.1-alpha.4",
+    "version": "0.0.1-alpha.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
