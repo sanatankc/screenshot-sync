@@ -1,4 +1,5 @@
 import { AppFrame } from "@/components/app/app-frame";
+import { AppLoader } from "@/components/app/app-loader";
 import { GalleryStage } from "@/components/gallery";
 import { DownloadRedirectStage } from "@/components/pairing/download-redirect-stage";
 import { OpenStage } from "@/components/pairing/open-stage";
@@ -8,6 +9,14 @@ import { useWorkspaceGallery } from "@/hooks/use-workspace-gallery";
 
 export default function App() {
   const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+
+  if (pathname === "/loader-preview") {
+    return (
+      <AppFrame>
+        <AppLoader label="Loader preview" />
+      </AppFrame>
+    );
+  }
 
   if (pathname === "/download/android/latest") {
     return (
@@ -27,6 +36,14 @@ export default function App() {
 
   const pairing = usePairingFlow();
   const gallery = useWorkspaceGallery(pairing.workspaceId, pairing.webSessionToken, pairing.disconnect);
+
+  if (pairing.phase === "booting") {
+    return (
+      <AppFrame>
+        <AppLoader />
+      </AppFrame>
+    );
+  }
 
   const showGallery = pairing.phase === "paired" && pairing.workspaceId && pairing.webSessionToken;
 
